@@ -22,21 +22,8 @@ impl Scanner {
         self.characters.get(self.cursor)
     }
 
-    pub fn peek_n(&self, len: usize) -> Option<String> {
-        let mut string = String::new();
-        for i in 0..len {
-            let c = self.characters.get(self.cursor+i);
-            match c {
-                Some(v) => {
-                    string.push(*v);
-                } 
-                _ => {
-                    return None;
-                }
-            }
-        }
-
-        Some(string)
+    pub fn peek_n(&self, len: usize) -> Option<&char> {
+        self.characters.get(self.cursor+len)
     }
 
     pub fn is_done(&self) -> bool {
@@ -67,38 +54,60 @@ impl Scanner {
         }
     }
 
-    // pub fn transform<T>(&mut self, callback : impl FnOnce(&char)->Option<T> ) -> Option<T>  {
-    //     let current = self.characters.get(self.cursor)?;
-    //     let ret = callback(current);
-    //     if let Some(t) = ret {
-    //         self.cursor+=1;
-    //         Some(t)
-    //     } else {
-    //         None
-    //     }
-    // }
+    pub fn peek_rest(&self) -> String {
+        let mut rest = String::new();
+        for i in self.cursor.. self.characters.len() {
+            rest.push(self.characters[i]);
+        }
+
+        return rest;
+    }
+
 }
 
 
 pub struct Parser {
-    reader: String,
-    string_pos: usize,
-    line_tally: usize,
-    // line_pos: usize
+    scanner: Scanner
+}
+
+#[derive(Debug)]
+pub enum Segment {
+    Local,
+    Constant,  // Aka const
+    Argument,
+    Temp,
+    Static,
+    That,
+    This,
+    Pointer
+}
+
+#[derive(Debug)]
+pub enum ArithmeticType {
+    Add,
+    Sub,
+    Neg,
+    Eq,
+    Gt,
+    Lt,
+    And,
+    Or,
+    Not
 }
 
 
+
 #[derive(Debug)]
-pub enum  CommandType {
-    CArithmeticPush,
-    CPush,
-    CPop,
-    CLabel,
-    CGoto,
-    CIf,
-    CFunction,
-    CReturn,
-    CCall
+pub enum  CommandDetails {
+    Arithmetic(ArithmeticType),
+    Push(Segment, i16),
+    Pop(Segment, i16),
+    Label,
+    Goto,
+    If,
+    Function,
+    Return,
+    Call
 }
 
 impl Parser {
@@ -109,92 +118,152 @@ impl Parser {
         input_stream.read_to_string(&mut reader).unwrap();
         
         let parser = Parser {
-            reader,
-            line_tally: 0,
-            // line_pos: 0,
-            string_pos: 0
+            scanner: Scanner::new(reader.chars().collect())
         };
 
         parser
     }
 
     fn peek_line(&self) -> String {
-        let mut start = self.reader.chars().skip(self.string_pos);
-        let mut string = String::new();
-        loop {
-            let c = start.next().unwrap();
-            if c == '\n' || c=='\r' {
-                break;
+        let mut str = String::new();
+        for i in 0.. {
+            let c = self.scanner.peek_n(i);
+            match c {
+                Some(v) => {
+                    if v == &'\n' || v == &'\r' {
+                        break;
+                    } else {
+                        str.push(*v);
+                    }
+                }
+                None => {break;}
             }
-
-            string.push(c);
         }
 
-        string
+        return str;
     }
 
     fn consume_line(&mut self) -> String {
-        if self.string_pos == 0 {
-            return String::default();
+        let line = self.peek_line();
+        for i in 0.. {
+            let c = self.scanner.pop(); 
+            match c {
+                Some('\n') => {
+                    break;
+                }
+                _ => {}
+            }
         }
 
-        let mut start = self.reader.chars().skip(self.string_pos).peekable();
-        let mut string = String::new();
-        loop {
-            let c = start.next().unwrap();
+        line
+    }
 
-            if c == '\r' && start.peek() == Some(&'\n') {
-                self.string_pos+=2;
-                break;
+    fn consume_non_whitespace(&mut self) {
+        while let Some(v) = self.scanner.peek() {
+            if v.is_whitespace() {
+               break; 
             }
-            else if c == '\n' {
-                self.string_pos+=1;
+            self.scanner.pop();
+        }
+    }
+
+    fn consume_whitespace(&mut self) {
+        loop {
+            match self.scanner.peek() {
+                Some(v) => {
+                    if !v.is_whitespace() {
+                        break;
+                    } else {
+                        let _ =  self.scanner.pop();
+                    }
+                }
+                None => {break;} 
+            }
+        }
+    }
+
+    fn parse_integer(&mut self) -> i16 {
+        self.consume_whitespace();
+        let rest = self.peek_line();
+        
+        let mut s= String::new();
+        for c in rest.chars() {
+            if c.is_whitespace() {
                 break;
             } else {
-                self.string_pos+=1;
-                println!("{:?}", self.reader.chars().skip(self.string_pos).collect::<Vec<char>>());
-                string.push(c);
+                s.push(c);
             }
         }
 
-        println!("string pos: {}\\{}", self.string_pos, self.reader.len());
-
-        self.line_tally +=1;
-
-        string
-    }
-
-    pub fn has_more_lines(&mut self) -> bool {
-        println!("peek ={}", self.peek_line());
-        self.peek_line().is_empty()
-    } 
-
-    // advance to next line. Must be called after construction
-    pub fn advance(&mut self){
-        println!("advacing");
-        let consumed = self.consume_line();
-        println!("consumed={}", consumed);
-    }
-
-    pub fn command_type(&self) -> CommandType {
+        // println!("s='{}'", s);
+        let v = str::parse(s.as_str())
+            .unwrap();
         
-
-        todo!("Command type");
+        v
     }
 
-    pub fn arg1(&self) -> String {
-        todo!();
+    fn parse_segment(&mut self, source_line: &str) -> Segment {
+        self.consume_non_whitespace();
+        self.consume_whitespace();
+        let rest = self.peek_line();
+        let segment;
+        if rest.starts_with("constant") {
+            segment = Segment::Constant;
+        } else if rest.starts_with("local") {
+            segment = Segment::Local;
+        } else if rest.starts_with("argument") {
+            segment = Segment::Argument;
+        } else if rest.starts_with("this") {
+            segment = Segment::This;
+        } else if rest.starts_with("that") {
+            segment = Segment::That;
+        } else if rest.starts_with("temp") {
+            segment = Segment::Temp;
+        } else {
+            println!("rest='{}'. Line='{}'", rest,source_line);
+            unimplemented!();
+        }
+
+        self.consume_non_whitespace();
+
+        return segment;
     }
 
-    pub fn arg2(&self) -> i16 {
-        todo!()
+    // reutrns none if end of parsing
+    pub fn next_command(&mut self) -> Option<(CommandDetails, String)> {
+        self.consume_line();
+
+        self.consume_whitespace();
+
+        let rest = self.peek_line();
+        if rest.len() == 0 {
+            return None;
+        }
+        
+        if rest.starts_with("pop") {
+            let segment = self.parse_segment(&rest);
+            let value = self.parse_integer();
+            return Some((CommandDetails::Pop(segment, value), rest.clone()));
+        } else if rest.starts_with("push") {
+            let segment = self.parse_segment(&rest);
+            let value = self.parse_integer();
+            return Some((CommandDetails::Push(segment, value), rest.clone()))
+        } else if rest.starts_with("//") {
+            return self.next_command();
+        } else if rest.starts_with("add") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Add), rest.clone()));
+        } else if rest.starts_with("sub") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Sub), rest.clone()));
+        } else if rest.starts_with("eq") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Eq), rest.clone()));
+        } else if rest.starts_with("lt") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Lt), rest.clone()));
+        } else {
+            println!("rest='{}'", rest);
+            unimplemented!();
+        }
+
     }
-
-    pub fn line_number(&self) -> usize {
-        self.line_tally
-    }
-
-
 }
 
 

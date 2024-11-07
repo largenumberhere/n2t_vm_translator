@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+indoc = "2.0.5"
 rusty_parser = "1.1.0"
