@@ -258,6 +258,16 @@ impl Parser {
             return Some((CommandDetails::Arithmetic(ArithmeticType::Eq), rest.clone()));
         } else if rest.starts_with("lt") {
             return Some((CommandDetails::Arithmetic(ArithmeticType::Lt), rest.clone()));
+        } else if rest.starts_with("gt") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Gt), rest.clone()));
+        } else if rest.starts_with("neg") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Neg), rest.clone()));
+        } else if rest.starts_with("and") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::And), rest.clone()));
+        } else if rest.starts_with("or") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Or), rest.clone()));
+        } else if rest.starts_with("not") {
+            return Some((CommandDetails::Arithmetic(ArithmeticType::Not), rest.clone()));
         } else {
             println!("rest='{}'", rest);
             unimplemented!();

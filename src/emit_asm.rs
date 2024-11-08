@@ -9,11 +9,13 @@ use std::io::Write as IoWrite;
 
 struct SymbolGenerator {
     next_id: usize,
+
 }
 impl SymbolGenerator {
     fn new() -> SymbolGenerator {
         SymbolGenerator {
             next_id: 0,
+
         }
     }
 
@@ -31,7 +33,8 @@ impl SymbolGenerator {
 
 pub struct Emitter <W: IoWrite>{
     writer: BufWriter<W>,
-    symbol_generator: SymbolGenerator
+    symbol_generator: SymbolGenerator,
+    emitted_instructions_count: usize
 }
 
 
@@ -39,7 +42,8 @@ impl<W: IoWrite> Emitter<W> {
     pub fn new(stream: W) -> Emitter<W> {
         Emitter {
             writer: BufWriter::new(stream),
-            symbol_generator: SymbolGenerator::new()
+            symbol_generator: SymbolGenerator::new(),
+            emitted_instructions_count: 0
         }
     }
 
@@ -61,18 +65,41 @@ impl<W: IoWrite> Emitter<W> {
             @0
             M=D // todo: LCL, ARG, THIS, THAT"};
 
-
-
         // 2. setup segment pointers
-        self.writer.write_fmt(format_args!("{}\n\n", asm))
-            .unwrap();
+        self.emitln(asm);
+        self.emitln("");
+        // self.writer.write_fmt(format_args!("{}\n\n", asm))
+        //     .unwrap();
 
         // panic!("{}", a);
     }
 
     fn emitln(&mut self, str: &str) {
-        self.writer.write_fmt(format_args!("{}\n", str))
-            .unwrap();
+        let lines = str.split('\n');
+        // let lines_count = lines.clone().count();
+        // let lines = lines.take(
+        //     lines_count.checked_sub(3)
+        //     .unwrap_or(lines_count)
+        // );
+        for line in lines {
+            // if line is instruction, display the number
+            if !line.starts_with("//") && !line.starts_with("(") && !line.is_empty() {
+                //ignore newline characters
+                //let mut line_bits = line.split("\n");
+                //let line = line_bits.next().unwrap();
+
+                let no = self.emitted_instructions_count;
+                self.write_fmt(format_args!("{:90}//{:3}\n", line, no)).unwrap();
+                self.emitted_instructions_count += 1;
+            }
+
+            else {
+                self.write_fmt(format_args!("{:90}\n", line)).unwrap();
+            }
+
+
+        }
+        // self.writer.write_fmt(format_args!("\n")).unwrap();
     }
 
     fn emit_label_start(&mut self, symbol: &str) {
@@ -93,13 +120,12 @@ impl<W: IoWrite> Emitter<W> {
             A=M         // A = stack pointer
             M=0         // zero top of stack for debugging convieneince
             A=D         // A = old top of stack     // end stack_to_a"});
-
     }
 
     // tested
     fn stack_to_d(&mut self) {
         self.stack_to_a();
-        self.emitln("D=A");
+        self.emitln("D=A        ");
     }
 
     // take a from the local segment at offset 0 and place it on stack
@@ -147,8 +173,7 @@ impl<W: IoWrite> Emitter<W> {
     pub fn pop_argument_n(&mut self, n: i16) {
         self.emitln(indoc! {r"
             @ARG
-            D=M // D = *ARG
-        "});
+            D=M // D = *ARG"});
         self.emitln(&format!("@{}   //A=offset", n));
         self.emitln(indoc! {r"
             D=D+A   // D = n-th argument's address
@@ -158,8 +183,7 @@ impl<W: IoWrite> Emitter<W> {
             M=D     // top of stack = n-th argument
             @SP
             A=M
-            M=M+1   // increase stack pointer
-        "});
+            M=M+1   // increase stack pointer"});
     }
 
 
@@ -169,10 +193,10 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             D=A
             @SP
-            A=M     // A=*sp
-            M=D     // **sp = D
+            A=M         // A=*sp
+            M=D         // **sp = D
             @SP
-            M=M+1   //*sp = *sp+1"});
+            M=M+1       //*sp = *sp+1"});
     }
 
     fn emit_push_local_a(&mut self) {
@@ -189,8 +213,18 @@ impl<W: IoWrite> Emitter<W> {
     // tested
     pub fn push_const(&mut self, val: i16) {
         self.assign_a(val);
-        self.a_to_stack();
-        self.emitln("");
+        self.emitln(indoc! {r"
+            D=A
+            @SP
+            A=M         // A=*sp
+            M=D         // **sp = D
+            @SP
+            M=M+1       //*sp = *sp+1
+        "});
+
+        // self.assign_a(val);
+        // self.a_to_stack();
+        // self.emitln("");
     }
 
     fn assign_a(&mut self, value: i16) {
@@ -217,82 +251,90 @@ impl<W: IoWrite> Emitter<W> {
     // tested
     pub fn add(&mut self) {
 
-        let start = self.symbol_generator.next_commented("add_start");
+        //let start = self.symbol_generator.next_commented("add_start");
         let end = self.symbol_generator.next_commented("add_end");
-        self.emit_label_start(start.as_str());
+        //self.emit_label_start(start.as_str());
 
         // D = pop1
         self.stack_to_d();
 
         self.emitln(indoc!{r"
-            @SP     // add last item in stack to D
-            M=M-1   // decrement stack pointer
+            @SP         // add last item in stack to D
+            M=M-1       // decrement stack pointer
             @SP
-            A=M     // A = stack pointer
-            A=M     // A = pop2
-            D=D+A   // D = pop1 + pop2
-            @SP     // clear last item
-            A=M     //*sp
-            M=0     //**sp = 0
-            A=D     // A = result
-        "});
+            A=M         // A = stack pointer
+            A=M         // A = pop2
+            D=D+A       // D = pop1 + pop2
+            @SP         // clear last item
+            A=M         //*sp
+            M=0         //**sp = 0
+            A=D         // A = result"});
 
         self.a_to_stack();
         self.emit_label_start(end.as_str());
         self.emitln("");
     }
 
-    // todo: review this for correctness
+    // tested
     pub fn eq(&mut self) {
         // todo!("needs reviewing");
-        let jump_destination = self.symbol_generator.next_commented("");
-
-        // A = pop
-        self.stack_to_a();
-
-
+        let is_eq = self.symbol_generator.next_commented("is_eq");
+        let end = self.symbol_generator.next_commented("end");
+        // D = pop1
+        self.stack_to_d();
         self.emitln(indoc!(r"
-            D=A     // D = pop1
             @SP
-            M=M-1
-            A=M     // A = pop2
-            D=A-D   // D = pop2 - pop1
-        "));
-
-
-        self.emitln(&format!("@{}", jump_destination));
-
-        self.emitln(indoc!(r"
-            D;JE    // jump to end if equal
-            @0
-            D=Ax    // D = 0 designating false
-        "));
-
-        self.emitln(&format!("{}:", jump_destination));
-        self.emitln(indoc!(r"
-            @1
-            D=A     // D = 1 designating true
+            M=M-1       // decrease stack pointer
             @SP
             A=M
-            M=D     // write result on stack
+            A=M         // A = pop2
+            D=A-D       // D = pop2 - pop1"));
+
+        self.emitln(&format!("@{}", is_eq));
+        self.emitln(indoc!(r"
+            D;JEQ       // jump to is_eq if pop1 == pop2, else fallthrough
+            D=0         // D = 0 designating false"));
+        self.emitln(&format!("@{}", end));
+        self.emitln(indoc!(r"
+            0;JMP       // jump to end"));
+
+        self.emit_label_start(is_eq.as_str());
+        self.emitln(indoc!(r"
+            D=-1         // D = 1 designating true"));
+        self.emit_label_start(end.as_str());
+        self.emitln(indoc! {r"
             @SP
             A=M
-            M=M+1   // increase stack pointer
-        "));
+            M=D         // write result on stack
+            @SP
+            M=M+1       // increase stack pointer"});
 
+        self.emitln("");
         // todo!("eq");
     }
 
+    // tested!
     pub fn sub(&mut self) {
-        todo!()
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // decrease stack pointer
+            @SP
+            A=M
+            A=M         // A = value from stack
+            D=A-D       // D = pop2 - pop1
+            @SP
+            A=M
+            M=D         // write result on stack
+            @SP
+            M=M+1       // increase stack pointer"});
     }
 
     // take a value from the that segment at offset n and place it on the stack
     pub fn pop_that_n(&mut self, n: i16) {
         self.emitln(indoc! {r"
             @THAT
-            D=M // D = *THAT
-        "});
+            D=M         // D = *THAT"});
         self.emitln(&format!("@{}   //A=offset", n));
         self.emitln(indoc! {r"
             A=A+D   // A = address of 'that' number n
@@ -302,15 +344,14 @@ impl<W: IoWrite> Emitter<W> {
             M=D // top of stack is set to 'that' number n
             @SP
             A=M
-            M=M+1   // increase stack pointer
-        "});
+            M=M+1   // increase stack pointer"});
     }
 
     pub fn pop_temp_n(&mut self, n: i16) {
         self.emitln(indoc! {r"
             @TEMP
-            D=M // D = *TEMP
-        "});
+            D=M // D = *TEMP"});
+
         self.emitln(&format!("@{}   //A=offset", n));
         self.emitln(indoc! {r"
             A=A+D   // A = address of 'TEMP' number n
@@ -320,8 +361,7 @@ impl<W: IoWrite> Emitter<W> {
             M=D // top of stack is set to 'TEMP' number n
             @SP
             A=M
-            M=M+1   // increase stack pointer
-        "});
+            M=M+1   // increase stack pointer"});
     }
 
     pub fn pop_this_n(&mut self, n: i16) {
@@ -432,67 +472,126 @@ impl<W: IoWrite> Emitter<W> {
         todo!("pop ptr n")
     }
 
+    // tested!
     pub fn lt(&mut self) {
-        let lt_start = self.symbol_generator.next_commented("lt");
         let is_lt = self.symbol_generator.next_commented("is_lt");
         let is_not_lt = self.symbol_generator.next_commented("is_not_lt");
         let lt_end = self.symbol_generator.next_commented("lt_end");
 
-        self.emit_label_start(lt_start.as_str());
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc!(r"
+        self.emitln(indoc!{r"
             @SP
-            M=M-1   // decrease stack pointer
-            A=M     // A = pop2
-            D=A-D   // D = pop2 - pop1"));
+            M=M-1       // decrease stack pointer
+            A=M         // A = *SP
+            A=M         // A = pop2
+            D=A-D       // D = pop2 - pop1"});
 
         self.emitln(&format!("@{}   //A = is_lt", is_lt));
         self.emitln(indoc! {r"
-            D;JLT   // if pop1  < pop2 then goto is_lt
-        "});
+            D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough"});
         self.emit_label_start(is_not_lt.as_str());
         self.emitln(indoc! {r"
-            @SP
-            A=M // A = *SP
-            M=0 // **SP = 0
-            @SP
-            M=M+! // *SP ++. increase stack pointer
-        "});
+            D=0"});
         self.emitln(&format!("@{}", lt_end));
-        self.emit_label_start(indoc! {r"
-            ;JMP    // if not pop1 < pop2 then goto lt_end
-        "});
+        self.emitln(indoc! {r"
+            0;JMP"});
 
         self.emit_label_start(is_lt.as_str());
         self.emitln(indoc!{r"
-            @SP
-            A=M
-            M=1     // set to true
-            @SP
-            M=M+1   // increase stack pointer
-        "});
+            D=-1"});
 
         self.emit_label_start(lt_end.as_str());
+        self.emitln(indoc!{r"
+            @SP
+            A=M         // A = *SP
+            M=D         // **SP = val
+            @SP
+            M=M+1       // *SP ++ increase stack pointer"});
+
+        self.emitln("");
     }
 
+    // tested
     pub fn gt(&mut self) {
-        todo!("gt")
+        let end = self.symbol_generator.next_commented("gt_end");
+        let is_gt = self.symbol_generator.next_commented("is_gt");
+
+        // D = pop1
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // decrease stack pointer
+            A=M         // A = address of stack top
+            A=M         // A = pop2
+            D=A-D       // pop2 - pop1
+            "});
+        self.emitln(&format!("@{}   //A = is_gt", is_gt));
+        self.emitln(indoc!{r"
+            D;JGT   // if pop2 > pop1 then goto is_gt, else
+            D=0     // not gt"});
+        self.emitln(&format!("@{}   //A = end", end));
+        self.emitln(indoc!(r"
+            0;JMP"));
+        self.emit_label_start(is_gt.as_str());
+        self.emitln(indoc! {r"
+            D=-1    //yes gt"});
+        self.emit_label_start(end.as_str());
+        self.emitln(indoc! {r"
+            A=D"});
+        self.a_to_stack();
     }
 
+    // tested
     pub fn neg(&mut self) {
-        todo!("neg")
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            D=-D        // calculate
+            @SP
+            A=M
+            M=D         // write reusult to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+        self.emitln("");
     }
 
+    // tested
     pub fn or(&mut self) {
-        todo!("or")
+        // D = pop1
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // decrease stack pointer
+            A=M
+            M=M|D       // write result to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+        self.emitln("");
     }
 
+    // tested
     pub fn not(&mut self) {
-        todo!("not")
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            D=!D        // calculate
+            @SP
+            A=M
+            M=D         // write reusult to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+        self.emitln("");
     }
 
     pub fn and(&mut self) {
-        todo!("and")
+        // D = pop1
+        self.stack_to_d();
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // decrease stack pointer
+            A=M
+            M=M&D       // write result to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+        self.emitln("");
     }
 }
