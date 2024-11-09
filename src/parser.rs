@@ -223,6 +223,10 @@ impl Parser {
             segment = Segment::That;
         } else if rest.starts_with("temp") {
             segment = Segment::Temp;
+        } else if rest.starts_with("static") {
+            segment = Segment::Static;
+        } else if rest.starts_with("pointer") {
+            segment = Segment::Pointer;
         } else {
             println!("rest='{}'. Line='{}'", rest,source_line);
             unimplemented!();

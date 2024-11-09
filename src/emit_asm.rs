@@ -6,6 +6,7 @@ use rusty_parser::str;
 use crate::parser::Segment;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
+use crate::parser::Segment::This;
 
 struct SymbolGenerator {
     next_id: usize,
@@ -384,39 +385,39 @@ impl<W: IoWrite> Emitter<W> {
             Segment::Static => {"STATIC"}
             Segment::That => {"THAT"}
             Segment::This => {"THIS"}
-            Segment::Pointer => {
-                match offset {
-                    0 => "THIS",
-                    1 => "THAT",
-                    _=> panic!("Pointer only takes the arguments 1 or 0")
-                }
+            Segment::Pointer => { "THIS"
+                // match offset {
+                //     0 => "THIS",
+                //     1 => "THAT",
+                //     _=> panic!("Pointer only takes the arguments 1 or 0")
+                // }
             }
         };
     }
 
     // move the value at offset n from the segment onto the stack
     fn pop_non_stack_segment(&mut self, segment: Segment, offset:i16) {
-        let not_temp_segment;
+        // let not_temp_segment;
         let segment_symbol = self.segment_symbol_str(segment, offset);
-        if segment == Segment::Pointer {
-            todo!("special case for pointer");
-        } else if segment == Segment::Temp {
-            // the temp starts at a constant address
-            not_temp_segment = false;
-        } else {
-            not_temp_segment = true;
-        }
 
-        if not_temp_segment {
-            self.emitln(&format!("@{}", segment_symbol));
-            self.emitln(indoc! {r"
-            D=M         // D = segment start"});
-        } else {
-
-            self.emitln(indoc! {r"
+        // D = address of segment start
+        match segment {
+            Segment::Pointer => {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=A         // D = segment start"});
+            },
+            Segment::Temp => {
+                self.emitln(indoc! {r"
                 @5
                 D=A
             "});
+            },
+            _=> {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=M         // D = segment start"});
+            }
         }
 
         // A = segment offset
@@ -450,29 +451,29 @@ impl<W: IoWrite> Emitter<W> {
 
     // move the value from the stack to the segment at offset n
     fn push_non_stack_segment(&mut self, segment: Segment, offset:i16) {
-        let not_temp_segment;
+
         let segment_symbol = self.segment_symbol_str(segment, offset);
-        if segment == Segment::Pointer {
-            todo!("special case for pointer");
-            return;
-        } else if segment == Segment::Temp {
-            not_temp_segment = false;
-        } else {
-            not_temp_segment = true;
-        }
 
-
-        if not_temp_segment {
-            self.emitln(&format!("@{}", segment_symbol));
-            self.emitln(indoc! {r"
-            D=M         // D = segment start"});
-        } else {
-            // yes temp segment
-            self.emitln(indoc! {r"
+        // D = address of segment start
+        match segment {
+            Segment::Pointer => {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=A         // D = segment start"});
+            },
+            Segment::Temp => {
+                self.emitln(indoc! {r"
                 @5
                 D=A
             "});
+            },
+            _=> {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=M         // D = segment start"});
+            }
         }
+
         // A = segment offset
         self.assign_a(offset);
         self.emitln(indoc! {r"
