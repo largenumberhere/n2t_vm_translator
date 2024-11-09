@@ -1,4 +1,5 @@
 use std::{fs::File, io::{BufRead, BufReader, Lines, Read}, iter::Peekable};
+use std::fmt::{Display, Formatter};
 
 // inspired by https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/
 struct Scanner {
@@ -70,7 +71,7 @@ pub struct Parser {
     scanner: Scanner
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Segment {
     Local,
     Constant,  // Aka const
@@ -82,7 +83,7 @@ pub enum Segment {
     Pointer
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArithmeticType {
     Add,
     Sub,
@@ -109,6 +110,9 @@ pub enum  CommandDetails {
     Return,
     Call
 }
+
+
+
 
 impl Parser {
     // constructor
@@ -229,7 +233,7 @@ impl Parser {
         return segment;
     }
 
-    // reutrns none if end of parsing
+    // reuturns none if end of parsing
     pub fn next_command(&mut self) -> Option<(CommandDetails, String)> {
         self.consume_line();
 

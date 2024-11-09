@@ -1,4 +1,4 @@
-
+use std::cmp::PartialEq;
 use std::fs::File;
 use std::io::{BufWriter};
 use indoc::indoc;
@@ -36,6 +36,7 @@ pub struct Emitter <W: IoWrite>{
     symbol_generator: SymbolGenerator,
     emitted_instructions_count: usize
 }
+
 
 
 impl<W: IoWrite> Emitter<W> {
@@ -76,30 +77,17 @@ impl<W: IoWrite> Emitter<W> {
 
     fn emitln(&mut self, str: &str) {
         let lines = str.split('\n');
-        // let lines_count = lines.clone().count();
-        // let lines = lines.take(
-        //     lines_count.checked_sub(3)
-        //     .unwrap_or(lines_count)
-        // );
         for line in lines {
-            // if line is instruction, display the number
+            // if line is instruction, display the instruction number for debugging convenience
             if !line.starts_with("//") && !line.starts_with("(") && !line.is_empty() {
-                //ignore newline characters
-                //let mut line_bits = line.split("\n");
-                //let line = line_bits.next().unwrap();
-
                 let no = self.emitted_instructions_count;
                 self.write_fmt(format_args!("{:90}//{:3}\n", line, no)).unwrap();
                 self.emitted_instructions_count += 1;
             }
-
             else {
                 self.write_fmt(format_args!("{:90}\n", line)).unwrap();
             }
-
-
         }
-        // self.writer.write_fmt(format_args!("\n")).unwrap();
     }
 
     fn emit_label_start(&mut self, symbol: &str) {
@@ -123,67 +111,10 @@ impl<W: IoWrite> Emitter<W> {
     }
 
     // tested
+    // clobbers, A, D
     fn stack_to_d(&mut self) {
         self.stack_to_a();
         self.emitln("D=A        ");
-    }
-
-    // take a from the local segment at offset 0 and place it on stack
-    fn pop_local_a(&mut self) {
-
-        self.emitln(indoc! {r"
-            @LCL
-            A=M // A = *LCL
-            D=M // A = first local value
-            @SP
-            A=M // SP = *SP
-            M=D // put first local on top of stack
-            @SP
-            A=M // SP = *SP
-            M=M+1   // increase stack pointer
-        "});
-
-        // todo!("backwards");
-        // self.emitln(indoc! {r"
-        //     // emit_lcl_pop
-        //     @LCL
-        //     D=M
-        //     M=D-1
-        //     A=M
-        //     D=M
-        //     M=0 // zero the deallocted stack item for debugging convieneince
-        //     A=D"});
-    }
-
-
-    // pub fn pop_argument_a(&mut self) {
-    //     todo!("backwards");
-    //     self.emitln(indoc! {r"
-    //         // emit_arg_pop
-    //         @ARG
-    //         D=M
-    //         M=D-1
-    //         A=M
-    //         D=M
-    //         M=0 // zero the deallocted stack item for debugging convieneince
-    //         A=D"});
-    // }
-
-    // take the argument at offset n and place it on the stack
-    pub fn pop_argument_n(&mut self, n: i16) {
-        self.emitln(indoc! {r"
-            @ARG
-            D=M // D = *ARG"});
-        self.emitln(&format!("@{}   //A=offset", n));
-        self.emitln(indoc! {r"
-            D=D+A   // D = n-th argument's address
-            D=M     // D = n-th argument
-            @SP
-            A=M     // A = *SP
-            M=D     // top of stack = n-th argument
-            @SP
-            A=M
-            M=M+1   // increase stack pointer"});
     }
 
 
@@ -199,6 +130,7 @@ impl<W: IoWrite> Emitter<W> {
             M=M+1       //*sp = *sp+1"});
     }
 
+
     fn emit_push_local_a(&mut self) {
         self.emitln(indoc! {r"
             // emit_push_a
@@ -210,6 +142,13 @@ impl<W: IoWrite> Emitter<W> {
             M=M+1   //*LCL = *LCL+1"});
     }
 
+    fn assign_a(&mut self, value: i16) {
+        let value_string = format!(indoc!{r"
+            @{} // A = {}"},value, value);
+
+        self.emitln(&value_string.as_str());
+    }
+
     // tested
     pub fn push_const(&mut self, val: i16) {
         self.assign_a(val);
@@ -219,34 +158,15 @@ impl<W: IoWrite> Emitter<W> {
             A=M         // A=*sp
             M=D         // **sp = D
             @SP
-            M=M+1       //*sp = *sp+1
-        "});
+            M=M+1       //*sp = *sp+1"});
 
         // self.assign_a(val);
         // self.a_to_stack();
-        // self.emitln("");
-    }
-
-    fn assign_a(&mut self, value: i16) {
-        let value_string = format!(indoc!{r"
-            @{} // A = {}"},value, value);
-
-        self.emitln(&value_string.as_str());
-    }
-
-    fn push_local(&mut self) {
-        self.stack_to_a();
-        self.emit_push_local_a();
         self.emitln("");
     }
 
-    pub fn push_local_n(&mut self, n: i16) {
-        if n == 0 {
-            self.push_local();
-        } else {
-            todo!("push local n")
-        }
-    }
+
+
 
     // tested
     pub fn add(&mut self) {
@@ -328,151 +248,11 @@ impl<W: IoWrite> Emitter<W> {
             M=D         // write result on stack
             @SP
             M=M+1       // increase stack pointer"});
+
+        self.emitln("");
     }
 
-    // take a value from the that segment at offset n and place it on the stack
-    pub fn pop_that_n(&mut self, n: i16) {
-        self.emitln(indoc! {r"
-            @THAT
-            D=M         // D = *THAT"});
-        self.emitln(&format!("@{}   //A=offset", n));
-        self.emitln(indoc! {r"
-            A=A+D   // A = address of 'that' number n
-            D=M     // D = value of 'that' numner n
-            @SP
-            A=M // A = *SP
-            M=D // top of stack is set to 'that' number n
-            @SP
-            A=M
-            M=M+1   // increase stack pointer"});
-    }
-
-    pub fn pop_temp_n(&mut self, n: i16) {
-        self.emitln(indoc! {r"
-            @TEMP
-            D=M // D = *TEMP"});
-
-        self.emitln(&format!("@{}   //A=offset", n));
-        self.emitln(indoc! {r"
-            A=A+D   // A = address of 'TEMP' number n
-            D=M     // D = value of 'TEMP' number n
-            @SP
-            A=M // A = *SP
-            M=D // top of stack is set to 'TEMP' number n
-            @SP
-            A=M
-            M=M+1   // increase stack pointer"});
-    }
-
-    pub fn pop_this_n(&mut self, n: i16) {
-        self.emitln(indoc! {r"
-            @THIS
-            D=M // D = *THIS
-        "});
-
-        self.emitln(&format!("@{}   //A=offset", n));
-        self.emitln(indoc! {r"
-            A=D+A   // A = offset of nth this
-            D=M     // A = nth this value
-            @SP
-            A=M // SP = *SP
-            M=D // put first argument on top of stack
-            @SP
-            A=M // SP = *SP
-            M=M+1   // increase stack pointer"});
-    }
-
-    // pub fn pop_this_n(&mut self, n: i16) {
-    //     todo!()
-    // }
-
-    // take the value at top of arguments segment and place it on the stack
-    // pub fn emit_pop_this(&mut self) {
-    //     self.emitln(indoc! {r"
-    //         @THIS
-    //         A=M // A = *THIS
-    //         D=M // A = first argument value
-    //         @SP
-    //         A=M // SP = *SP
-    //         M=D // put first argument on top of stack
-    //         @SP
-    //         A=M // SP = *SP
-    //         M=M+1   // increase stack pointer
-    //     "});
-    // }
-
-    // take value off the stack and write it to the 'that' segment at offset n
-    pub fn push_that_n(&mut self, n: i16) {
-        todo!()
-        // self.emitln(indoc! {r"
-        //     @SP
-        //     A=M     // A = *SP
-        //     M=M-1   // decrease stack pointer
-        // "});
-        // self.emitln(&format!("@{} //A=offset", n));
-        // self.emitln(indoc! {r"
-        //     D=A
-        //     @THAT
-        //     A=M     // A = *THAT
-        //     D=A+D   // D = address of 'that' number n
-        //
-        //     @SP
-        //     A=M     // A = *SP
-        //     A=M     // A = top of stack
-        //     M=D     // Write address of 'that' number n to top of stack
-        //
-        //
-        //     A=M     // A = address of 'that' number n
-        //
-        //     @SP
-        //     A=M     // A = *SP
-        //     M=0     // zero top of stack
-        // "});
-
-
-        // self.emitln(indoc! {r"
-        //
-        // "});
-    }
-
-    pub fn push_arg_n(&mut self, n:i16) {
-        todo!("push arg n")
-    }
-
-    pub fn push_temp_n(&mut self, n: i16) {
-        todo!("push temp n")
-    }
-
-    pub fn push_static_n(&mut self, n: i16) {
-        todo!("push static n")
-    }
-
-    pub fn push_this_n(&mut self, n: i16) {
-        todo!("push this n");
-    }
-
-    pub fn push_ptr_n(&mut self, n: i16) {
-        todo!("push ptr n")
-    }
-
-    pub fn pop_static_n(&mut self, n: i16) {
-        todo!("pop static n")
-    }
-
-    pub fn pop_local_n(&mut self, n: i16) {
-        if n==0 {
-            self.pop_local_a();
-            return;
-        }
-
-        todo!("pop local n")
-    }
-
-    pub fn pop_ptr_n(&mut self, n: i16) {
-        todo!("pop ptr n")
-    }
-
-    // tested!
+      // tested!
     pub fn lt(&mut self) {
         let is_lt = self.symbol_generator.next_commented("is_lt");
         let is_not_lt = self.symbol_generator.next_commented("is_not_lt");
@@ -593,5 +373,175 @@ impl<W: IoWrite> Emitter<W> {
             @SP
             M=M+1       // increase stack pointer"});
         self.emitln("");
+    }
+
+    fn segment_symbol_str(&self, segment: Segment, offset: i16) -> &str {
+        return match segment {
+            Segment::Local => {"LCL"}
+            Segment::Constant => {unreachable!("Constant is not a real segment")}
+            Segment::Argument => {"ARG"}
+            Segment::Temp => {"TMP"}
+            Segment::Static => {"STATIC"}
+            Segment::That => {"THAT"}
+            Segment::This => {"THIS"}
+            Segment::Pointer => {
+                match offset {
+                    0 => "THIS",
+                    1 => "THAT",
+                    _=> panic!("Pointer only takes the arguments 1 or 0")
+                }
+            }
+        };
+    }
+
+    // move the value at offset n from the segment onto the stack
+    fn pop_non_stack_segment(&mut self, segment: Segment, offset:i16) {
+        let not_temp_segment;
+        let segment_symbol = self.segment_symbol_str(segment, offset);
+        if segment == Segment::Pointer {
+            todo!("special case for pointer");
+        } else if segment == Segment::Temp {
+            // the temp starts at a constant address
+            not_temp_segment = false;
+        } else {
+            not_temp_segment = true;
+        }
+
+        if not_temp_segment {
+            self.emitln(&format!("@{}", segment_symbol));
+            self.emitln(indoc! {r"
+            D=M         // D = segment start"});
+        } else {
+
+            self.emitln(indoc! {r"
+                @5
+                D=A
+            "});
+        }
+
+        // A = segment offset
+        self.assign_a(offset);
+        self.emitln(indoc! {r"
+            D=D+A      // D = pointer to destination in segment
+            @SP
+            A=M         // A = stack pointer
+            M=D         // write segment destination to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // decrease stack pointer
+            M=M-1       // decrease stack pointer
+            A=M
+            D=M         // read value from stack
+            @SP
+            // M=M+1       // Increase stack pointer
+            M=M+1       // Increase stack pointer
+            A=M         // A = stack pointer
+            A=M         // A = segment destination
+            M=D         // write to the segment destination
+            @SP
+            M=M-1       // Decrease stack pointer"});
+
+        self.emitln("");
+
+    }
+
+    // move the value from the stack to the segment at offset n
+    fn push_non_stack_segment(&mut self, segment: Segment, offset:i16) {
+        let not_temp_segment;
+        let segment_symbol = self.segment_symbol_str(segment, offset);
+        if segment == Segment::Pointer {
+            todo!("special case for pointer");
+            return;
+        } else if segment == Segment::Temp {
+            not_temp_segment = false;
+        } else {
+            not_temp_segment = true;
+        }
+
+
+        if not_temp_segment {
+            self.emitln(&format!("@{}", segment_symbol));
+            self.emitln(indoc! {r"
+            D=M         // D = segment start"});
+        } else {
+            // yes temp segment
+            self.emitln(indoc! {r"
+                @5
+                D=A
+            "});
+        }
+        // A = segment offset
+        self.assign_a(offset);
+        self.emitln(indoc! {r"
+            A=A+D   // A = pointer to read from
+            D=M     // D = value in segment
+            @SP
+            A=M     // A = stack address
+            M=D     // write value to stack
+            @SP
+            M=M+1   // increase stack pointer
+        "});
+    }
+
+    // take the argument at offset n and place it on the stack
+    pub fn pop_argument_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::Argument, n);
+    }
+
+    pub fn push_local_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::Local, n);
+    }
+
+    // take a value from the that segment at offset n and place it on the stack
+    pub fn pop_that_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::That, n);
+    }
+
+    pub fn pop_temp_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::Temp, n);
+    }
+
+    pub fn pop_this_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::This, n);
+    }
+
+    // take value off the stack and write it to the 'that' segment at offset n
+    pub fn push_that_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::That, n);
+     }
+
+    pub fn push_arg_n(&mut self, n:i16) {
+        self.push_non_stack_segment(Segment::Argument, n);
+    }
+
+    pub fn push_temp_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::Temp, n);
+    }
+
+    pub fn push_static_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::Static, n);
+    }
+
+    pub fn push_this_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::This, n);
+    }
+
+    pub fn push_ptr_n(&mut self, n: i16) {
+        self.push_non_stack_segment(Segment::Pointer, n);
+    }
+
+    pub fn pop_static_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::Static, n);
+    }
+
+    pub fn pop_local_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::Local, n);
+    }
+
+    pub fn pop_ptr_n(&mut self, n: i16) {
+        self.pop_non_stack_segment(Segment::Pointer, n);
     }
 }
