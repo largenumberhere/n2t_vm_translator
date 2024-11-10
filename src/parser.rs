@@ -1,6 +1,7 @@
-use std::{fs::File, io::{BufRead, BufReader, Lines, Read}, iter::Peekable};
-use std::fmt::{Display, Formatter};
-use crate::{TransformError, TransformResult};
+use std::{fs::File, io::{BufReader, Read}};
+use std::fmt::Display;
+use crate::transformer::TransformError;
+use crate::transformer::TransformResult;
 
 // inspired by https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/
 struct Scanner {
@@ -63,6 +64,19 @@ impl Scanner {
         }
 
         return rest;
+    }
+
+    pub fn line(&self) -> usize {
+        // this should only be used under error conditions so it doesn't need to be fast
+        let mut i = 0;
+        for c in self.characters.iter() {
+            if *c == '\n' {
+                i+=1;
+            }
+        }
+
+        return i;
+
     }
 
 }
@@ -279,7 +293,7 @@ impl Parser {
             return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Not), rest.clone())));
         } else {
             let err = format!("Unimplemented command.'{}'", rest);
-            return Some(Err(TransformError::SyntaxError(err)));
+            return Some(Err(TransformError::SyntaxError(err, self.scanner.line())));
 
             // unimplemented!();
         }

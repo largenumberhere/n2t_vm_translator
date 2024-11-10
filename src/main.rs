@@ -1,67 +1,55 @@
-use std::fs::{DirEntry, File, FileType};
+use std::fs::DirEntry;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use rusty_parser::str;
-
+use std::process::exit;
 mod parser;
 mod writer;
 mod emit_asm;
+mod transformer;
 
-use parser::Parser;
-use crate::writer::CodeWriter;
-
-fn visit_dir_entry(dir: DirEntry) {
+fn visit_dir_entry(dir: DirEntry, translate_error: &mut bool) {
     // recursively visit all subdirectories
     if dir.file_type().unwrap().is_dir() {
         let path = dir.path();
         for d in path.read_dir().unwrap() {
-            visit_dir_entry(d.unwrap());
+            visit_dir_entry(d.unwrap(), translate_error);
         }
     } else {
         let path = dir.path();
         if path.extension() == Some("vm".as_ref()) {
-            transform_file(path.as_path());
+            transformer::transform_file(path.as_path(), translate_error);
         }
     }
 }
 
-fn traverse_directories(path: &Path) {
+fn traverse_directories(path: &Path, translate_error: &mut bool) {
     for entry in std::fs::read_dir(path).unwrap()
     {
-        visit_dir_entry(entry.unwrap());
+        visit_dir_entry(entry.unwrap(), translate_error);
     }
 }
 
 fn main() {
+    let mut translate_error = false;
     let mut args = std::env::args();
-    let arg1 = args.skip(1).next()
-        .expect("Please provide a file or folder to translate");
+
+    let arg1 = match args.skip(1).next() {
+        Some(arg) => arg,
+        None => {
+            eprintln!("A file or folder must be supplied as the first argument.");
+            exit(1);
+        }
+    };
 
     let path = Path::new(&arg1);
     if path.is_dir() {
-        traverse_directories(path);
+        traverse_directories(path, &mut translate_error);
     } else {
-        transform_file(path);
+        transformer::transform_file(path, &mut translate_error);
     }
-}
 
-fn transform_file(in_file_path: &Path) {
-    println!("tranforming {}", in_file_path.display());
-    let out_path = assume_output_path(&in_file_path);
-
-    let file_out = std::fs::File::create(&out_path)
-        .expect("Failed to open output file");
-
-    let file_in = std::fs::File::open(&in_file_path)
-        .expect("Failed to open input file");
-    println!("{:?} -> {:?}", in_file_path, out_path);
-
-    let result = transform(file_in, file_out);
-    match result {
-        Ok(_) => {},
-        Err(error) => {
-            eprintln!("Failed to transform file '{:?}' because '{}'", in_file_path, error.to_string());
-        }
+    if translate_error {
+        std::process::exit(1);
     }
 }
 
@@ -90,31 +78,6 @@ fn assume_output_path(input_path: &Path) -> PathBuf {
     return PathBuf::from(new_str);
 }
 
-type TransformResult<T> = Result<T, TransformError> ;
-#[derive(Clone, Debug)]
-enum TransformError {
-    SyntaxError(String),
-    IoError(String)
-}
-impl std::fmt::Display for TransformError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            TransformError::SyntaxError(msg) => write!(f, "IO Error:{}", msg),
-            TransformError::IoError(msg) => write!(f, "IO Error: {}", msg)
-        }
-    }
-}
 
-fn transform<R: Read, W: Write>(in_stream: R, out_stream: W) -> Result<(), TransformError> {
 
-    let mut reader: Parser = parser::Parser::new(in_stream);
-    let mut writer: CodeWriter<W> = writer::CodeWriter::new(out_stream);
 
-    while let Some(val) = reader.next_command() {
-         let (command, line) = val?;
-
-        writer.write_command(&command, &line);
-    }
-
-    return Ok(());
-}
