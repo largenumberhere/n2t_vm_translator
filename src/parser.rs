@@ -1,5 +1,6 @@
 use std::{fs::File, io::{BufRead, BufReader, Lines, Read}, iter::Peekable};
 use std::fmt::{Display, Formatter};
+use crate::{TransformError, TransformResult};
 
 // inspired by https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/
 struct Scanner {
@@ -116,7 +117,7 @@ pub enum  CommandDetails {
 
 impl Parser {
     // constructor
-    pub fn new(mut input_stream: File) -> Parser {
+    pub fn new<R: Read>(mut input_stream: R) -> Parser {
 
         let mut reader= String::new();
         input_stream.read_to_string(&mut reader).unwrap();
@@ -238,7 +239,7 @@ impl Parser {
     }
 
     // reuturns none if end of parsing
-    pub fn next_command(&mut self) -> Option<(CommandDetails, String)> {
+    pub fn next_command(&mut self) -> Option<TransformResult<(CommandDetails, String)>> {
         self.consume_line();
 
         self.consume_whitespace();
@@ -251,35 +252,38 @@ impl Parser {
         if rest.starts_with("pop") {
             let segment = self.parse_segment(&rest);
             let value = self.parse_integer();
-            return Some((CommandDetails::Pop(segment, value), rest.clone()));
+            return Some(Ok((CommandDetails::Pop(segment, value), rest.clone())));
         } else if rest.starts_with("push") {
             let segment = self.parse_segment(&rest);
             let value = self.parse_integer();
-            return Some((CommandDetails::Push(segment, value), rest.clone()))
+            return Some(Ok((CommandDetails::Push(segment, value), rest.clone())))
         } else if rest.starts_with("//") {
             return self.next_command();
         } else if rest.starts_with("add") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Add), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Add), rest.clone())));
         } else if rest.starts_with("sub") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Sub), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Sub), rest.clone())));
         } else if rest.starts_with("eq") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Eq), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Eq), rest.clone())));
         } else if rest.starts_with("lt") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Lt), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Lt), rest.clone())));
         } else if rest.starts_with("gt") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Gt), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Gt), rest.clone())));
         } else if rest.starts_with("neg") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Neg), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Neg), rest.clone())));
         } else if rest.starts_with("and") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::And), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::And), rest.clone())));
         } else if rest.starts_with("or") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Or), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Or), rest.clone())));
         } else if rest.starts_with("not") {
-            return Some((CommandDetails::Arithmetic(ArithmeticType::Not), rest.clone()));
+            return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Not), rest.clone())));
         } else {
-            println!("rest='{}'", rest);
-            unimplemented!();
+            let err = format!("Unimplemented command.'{}'", rest);
+            return Some(Err(TransformError::SyntaxError(err)));
+
+            // unimplemented!();
         }
+
 
     }
 }
