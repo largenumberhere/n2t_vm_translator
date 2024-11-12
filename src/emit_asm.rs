@@ -305,8 +305,7 @@ impl<W: IoWrite> Emitter<W> {
             M=M-1       // decrease stack pointer
             A=M         // A = address of stack top
             A=M         // A = pop2
-            D=A-D       // pop2 - pop1
-            "});
+            D=A-D       // pop2 - pop1"});
         self.emitln(&format!("@{}   //A = is_gt", is_gt));
         self.emitln(indoc!{r"
             D;JGT   // if pop2 > pop1 then goto is_gt, else
@@ -321,6 +320,7 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             A=D"});
         self.a_to_stack();
+        self.emitln("");
     }
 
     // tested
