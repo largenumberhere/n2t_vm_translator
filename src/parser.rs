@@ -118,12 +118,12 @@ pub enum  CommandDetails {
     Arithmetic(ArithmeticType),
     Push(Segment, i16),
     Pop(Segment, i16),
-    Label,
-    Goto,
-    If,
+    Label(String),
+    IfGoto(String),
     Function,
     Return,
-    Call
+    Call,
+    Goto(String)
 }
 
 
@@ -252,6 +252,25 @@ impl Parser {
         return segment;
     }
 
+    fn parse_label_symbol(&mut self) -> String {
+        self.consume_non_whitespace();
+        self.consume_whitespace();
+        let mut string = String::new();
+        loop {
+            if let Some(v) = self.scanner.peek() {
+                // check for a non-alphanumeric character
+                if !v.is_alphabetic() {
+                    break;
+                }
+                string.push(*self.scanner.pop().unwrap());
+            } else {break;}
+        }
+
+        self.consume_non_whitespace();
+
+        string
+    }
+
     // reuturns none if end of parsing
     pub fn next_command(&mut self) -> Option<TransformResult<(CommandDetails, String)>> {
         self.consume_line();
@@ -291,11 +310,18 @@ impl Parser {
             return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Or), rest.clone())));
         } else if rest.starts_with("not") {
             return Some(Ok((CommandDetails::Arithmetic(ArithmeticType::Not), rest.clone())));
+        } else if rest.starts_with("label") {
+            let symbol = self.parse_label_symbol();
+            return Some(Ok((CommandDetails::Label(symbol), rest.clone())));
+        } else if rest.starts_with("if-goto") {
+            let symbol = self.parse_label_symbol();
+            return Some(Ok((CommandDetails::IfGoto(symbol), rest.clone())));
+        } else if rest.starts_with("goto") {
+            let symbol = self.parse_label_symbol();
+            return Some(Ok(((CommandDetails::Goto(symbol), rest.clone()))));
         } else {
             let err = format!("Unimplemented command.'{}'", rest);
             return Some(Err(TransformError::SyntaxError(err, self.scanner.line())));
-
-            // unimplemented!();
         }
 
 

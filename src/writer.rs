@@ -66,9 +66,9 @@ impl<W: std::io::Write> CodeWriter<W> {
             CommandDetails::Arithmetic(ArithmeticType::Or) =>   self.emit.or(),
             CommandDetails::Arithmetic(ArithmeticType::Not) =>  self.emit.not(),
 
-            CommandDetails::Label =>        todo!("label"),
-            CommandDetails::Goto =>         todo!("goto"),
-            CommandDetails::If =>           todo!("if"),
+            CommandDetails::Label(symbol) => self.emit.label(symbol.as_str()),
+            CommandDetails::Goto(symbol) => self.emit.goto(symbol.as_str()),
+            CommandDetails::IfGoto(symbol) => self.emit.ifgoto(symbol.as_str()),
             CommandDetails::Function =>     todo!("function"),
             CommandDetails::Return =>       todo!("return"),
             CommandDetails::Call =>         todo!("call"),

@@ -39,7 +39,6 @@ pub struct Emitter <W: IoWrite>{
 }
 
 
-
 impl<W: IoWrite> Emitter<W> {
     pub fn new(stream: W) -> Emitter<W> {
         Emitter {
@@ -102,20 +101,18 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             @SP
             M=M-1       // Decrement stack pointer
-            @SP
             A=M         // A = Stack pointer
-            D=M         // D = old top of stack
-            @SP
-            A=M         // A = stack pointer
-            M=0         // zero top of stack for debugging convieneince
-            A=D         // A = old top of stack     // end stack_to_a"});
+            A=M         // D = old top of stack"});
     }
 
     // tested
     // clobbers, A, D
     fn stack_to_d(&mut self) {
-        self.stack_to_a();
-        self.emitln("D=A        ");
+        self.emitln(indoc! {r"
+            @SP
+            M=M-1       // Decrement stack pointer
+            A=M         // A = Stack pointer
+            D=M         // D = old top of stack"});
     }
 
 
@@ -125,10 +122,9 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             D=A
             @SP
-            A=M         // A=*sp
-            M=D         // **sp = D
-            @SP
-            M=M+1       //*sp = *sp+1"});
+            M=M+1       // increase stack pointer
+            A=M-1       // get top of stack
+            M=D         // top of stack = D"});
     }
 
 
@@ -139,7 +135,7 @@ impl<W: IoWrite> Emitter<W> {
             @LCL
             A=M     // A=*LCL
             M=D     // **LCL = D
-            @0
+            @SP
             M=M+1   //*LCL = *LCL+1"});
     }
 
@@ -156,43 +152,26 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             D=A
             @SP
-            A=M         // A=*sp
-            M=D         // **sp = D
-            @SP
-            M=M+1       //*sp = *sp+1"});
-
-        // self.assign_a(val);
-        // self.a_to_stack();
+            M=M+1       // increase stack pointer
+            A=M-1       // get stack address to write to
+            M=D         // stack top = D"});
         self.emitln("");
     }
 
-
-
-
     // tested
     pub fn add(&mut self) {
-
-        //let start = self.symbol_generator.next_commented("add_start");
-        let end = self.symbol_generator.next_commented("add_end");
-        //self.emit_label_start(start.as_str());
-
         // D = pop1
         self.stack_to_d();
 
         self.emitln(indoc!{r"
             @SP         // add last item in stack to D
             M=M-1       // decrement stack pointer
-            @SP
             A=M         // A = stack pointer
             A=M         // A = pop2
             D=D+A       // D = pop1 + pop2
-            @SP         // clear last item
-            A=M         //*sp
-            M=0         //**sp = 0
             A=D         // A = result"});
-
         self.a_to_stack();
-        self.emit_label_start(end.as_str());
+
         self.emitln("");
     }
 
@@ -225,13 +204,11 @@ impl<W: IoWrite> Emitter<W> {
         self.emit_label_start(end.as_str());
         self.emitln(indoc! {r"
             @SP
-            A=M
-            M=D         // write result on stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            M=M+1       // increase stack pointer
+            A=M-1       // get pointer to top of stack
+            M=D         // write result on stack"});
 
         self.emitln("");
-        // todo!("eq");
     }
 
     // tested!
@@ -239,16 +216,12 @@ impl<W: IoWrite> Emitter<W> {
         self.stack_to_d();
         self.emitln(indoc! {r"
             @SP
-            M=M-1       // decrease stack pointer
-            @SP
-            A=M
+            A=M-1       // get pointer to top item in stack
             A=M         // A = value from stack
             D=A-D       // D = pop2 - pop1
             @SP
-            A=M
-            M=D         // write result on stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            A=M-1
+            M=D         // write result on stack"});
 
         self.emitln("");
     }
@@ -263,8 +236,7 @@ impl<W: IoWrite> Emitter<W> {
         self.stack_to_d();
         self.emitln(indoc!{r"
             @SP
-            M=M-1       // decrease stack pointer
-            A=M         // A = *SP
+            A=M-1       // A = address of top item on stack
             A=M         // A = pop2
             D=A-D       // D = pop2 - pop1"});
 
@@ -285,10 +257,8 @@ impl<W: IoWrite> Emitter<W> {
         self.emit_label_start(lt_end.as_str());
         self.emitln(indoc!{r"
             @SP
-            A=M         // A = *SP
-            M=D         // **SP = val
-            @SP
-            M=M+1       // *SP ++ increase stack pointer"});
+            A=M-1
+            M=D         // write value to top of stack"});
 
         self.emitln("");
     }
@@ -304,9 +274,7 @@ impl<W: IoWrite> Emitter<W> {
             @SP
             M=M-1       // decrease stack pointer
             A=M         // A = address of stack top
-            A=M         // A = pop2
-            D=A-D       // pop2 - pop1
-            "});
+            D=M-D       // pop2 - pop1"});
         self.emitln(&format!("@{}   //A = is_gt", is_gt));
         self.emitln(indoc!{r"
             D;JGT   // if pop2 > pop1 then goto is_gt, else
@@ -321,18 +289,17 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc! {r"
             A=D"});
         self.a_to_stack();
+        self.emitln("");
     }
 
     // tested
     pub fn neg(&mut self) {
-        self.stack_to_d();
         self.emitln(indoc! {r"
-            D=-D        // calculate
             @SP
-            A=M
-            M=D         // write reusult to stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            A=M-1           // A = pointer to last item on stack
+            D=M             // D = last item on stack
+            D=-D            // negate value
+            M=D             // write result on stack"});
         self.emitln("");
     }
 
@@ -342,37 +309,30 @@ impl<W: IoWrite> Emitter<W> {
         self.stack_to_d();
         self.emitln(indoc! {r"
             @SP
-            M=M-1       // decrease stack pointer
-            A=M
-            M=M|D       // write result to stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            A=M-1       // pointer to last item on stack
+            M=M|D       // write result to stack"});
         self.emitln("");
     }
 
     // tested
     pub fn not(&mut self) {
-        self.stack_to_d();
         self.emitln(indoc! {r"
+            @SP
+            A=M-1       // A = pointer to last item on stack
+            D=M         // D = value from stack
+
             D=!D        // calculate
-            @SP
-            A=M
-            M=D         // write reusult to stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            M=D         // write result to stack"});
         self.emitln("");
     }
 
     pub fn and(&mut self) {
-        // D = pop1
+        // D = first item
         self.stack_to_d();
         self.emitln(indoc! {r"
             @SP
-            M=M-1       // decrease stack pointer
-            A=M
-            M=M&D       // write result to stack
-            @SP
-            M=M+1       // increase stack pointer"});
+            A=M-1       // A = 2nd item from stack
+            M=M&D       // write result to stack, overwriting 2nd item"});
         self.emitln("");
     }
 
@@ -385,13 +345,7 @@ impl<W: IoWrite> Emitter<W> {
             Segment::Static => {"STATIC"}
             Segment::That => {"THAT"}
             Segment::This => {"THIS"}
-            Segment::Pointer => { "THIS"
-                // match offset {
-                //     0 => "THIS",
-                //     1 => "THAT",
-                //     _=> panic!("Pointer only takes the arguments 1 or 0")
-                // }
-            }
+            Segment::Pointer => { "THIS"}
         };
     }
 
@@ -437,7 +391,6 @@ impl<W: IoWrite> Emitter<W> {
             A=M
             D=M         // read value from stack
             @SP
-            // M=M+1       // Increase stack pointer
             M=M+1       // Increase stack pointer
             A=M         // A = stack pointer
             A=M         // A = segment destination
@@ -480,11 +433,10 @@ impl<W: IoWrite> Emitter<W> {
             A=A+D   // A = pointer to read from
             D=M     // D = value in segment
             @SP
-            A=M     // A = stack address
-            M=D     // write value to stack
-            @SP
             M=M+1   // increase stack pointer
-        "});
+            A=M-1   // A = value at top of stack
+            M=D     // write value to stack"});
+        self.emitln("");
     }
 
     // take the argument at offset n and place it on the stack
@@ -544,5 +496,26 @@ impl<W: IoWrite> Emitter<W> {
 
     pub fn pop_ptr_n(&mut self, n: i16) {
         self.pop_non_stack_segment(Segment::Pointer, n);
+    }
+
+    const user_label_prefix: &'static str = "user_";
+    pub fn label(&mut self, symbol: &str) {
+        self.emitln(&format! {r"({}{})", Self::user_label_prefix, symbol});
+    }
+
+    // jump to the symbol if stack top > 0
+    pub fn ifgoto(&mut self, symbol: &str) {
+        self.stack_to_d();
+        self.emitln(&format! {r"@{}{}", Self::user_label_prefix, symbol});
+        self.emitln(indoc!{r"
+            D;JNE"});
+        self.emitln("");
+    }
+
+    pub fn goto(&mut self, symbol: &str) {
+        self.emitln(&format! {r"@{}{}", Self::user_label_prefix, symbol});
+        self.emitln(indoc!{r"
+            0;JMP"});
+        self.emitln("");
     }
 }
