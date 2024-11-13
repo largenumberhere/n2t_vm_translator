@@ -6,7 +6,9 @@ use rusty_parser::str;
 use crate::parser::Segment;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
+use std::sync::Arc;
 use crate::parser::Segment::This;
+
 
 struct SymbolGenerator {
     next_id: usize,
@@ -32,15 +34,15 @@ impl SymbolGenerator {
     }
 }
 
-pub struct Emitter <W: IoWrite>{
-    writer: BufWriter<W>,
+pub struct Emitter {
+    writer: BufWriter<Arc<File>>,
     symbol_generator: SymbolGenerator,
     emitted_instructions_count: usize
 }
 
 
-impl<W: IoWrite> Emitter<W> {
-    pub fn new(stream: W) -> Emitter<W> {
+impl Emitter {
+    pub fn new(stream: Arc<File>) -> Emitter {
         Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
@@ -56,19 +58,23 @@ impl<W: IoWrite> Emitter<W> {
     }
 
     pub fn emit_init(&mut self) {
-        // initalize segments
-        // 1. clear the memory if needed
-
-        let asm: &str= indoc!{r"
-            // emit_init: write 256 to stack pointer
-            @256
-            D=A
-            @0
-            M=D // todo: LCL, ARG, THIS, THAT"};
-
-        // 2. setup segment pointers
-        self.emitln(asm);
-        self.emitln("");
+    self.emitln(indoc! {r"
+        @Sys.init
+        0;JMP
+    "});
+        // // initalize segments
+        // // 1. clear the memory if needed
+        //
+        // let asm: &str= indoc!{r"
+        //     // // emit_init: write 256 to stack pointer
+        //     // @256
+        //     // D=A
+        //     // @0
+        //     // M=D // todo: LCL, ARG, THIS, THAT"};
+        //
+        // // 2. setup segment pointers
+        // self.emitln(asm);
+        // self.emitln("");
         // self.writer.write_fmt(format_args!("{}\n\n", asm))
         //     .unwrap();
 
@@ -517,5 +523,128 @@ impl<W: IoWrite> Emitter<W> {
         self.emitln(indoc!{r"
             0;JMP"});
         self.emitln("");
+    }
+
+    // a function declaration
+    pub fn function(&mut self, n_vars: i16, symbol: &str) {
+        // // initialize locals of count n_vars
+        // self.emitln(indoc! {r"
+        //     @LCL
+        // "});
+        // for i in 0..n_vars {
+        //     self.emitln(indoc!{r"
+        //         M=0     // zero the local variable
+        //         A=A+1   // increment counter
+        //     "});
+        // }
+        // inject label. Todo: make it comply with mangling rules
+        self.emit_label_start(symbol);
+
+    }
+
+    // tested
+    pub fn _return(&mut self) {
+        // move return value to args[0] of caller
+        // &args[0] = return
+        self.emitln(indoc! {r"
+            // insert return value to arg[0] of caller
+                // load caller's argument segment ARG= *LCL-3
+                @LCL
+                A=M     // A = address of first local
+                A=M
+                A=A-1
+                A=A-1
+                A=A-1   // A = address of caller's ARG
+                A=M
+                D=M     // A = caller's ARG
+                @ARG
+                A=M
+                M=D     // write segment value
+
+                // pop item off stack
+                @SP
+                M=M-1       // Decrement stack pointer
+                A=M         // A = Stack pointer
+                D=M         // D = old top of stack
+                // write item to arg0
+                @ARG
+                A=M         // address of first argument
+                M=D         // arg0 = item 1
+
+            // discard stack
+            @ARG
+            D=M+1           // end of caller's stackframe
+            @SP
+            M=D             // set stack pointer to just underneath previous function stackframe
+
+            // stow return address address
+            @LCL
+            A=M
+            A=A-1
+            A=A-1
+            A=A-1
+            A=A-1
+            A=A-1   // D = address of return address
+            D=A     // D = address of return address
+            @R13
+            M=D     // mem[13] = return address address
+
+            // recover caller's segment pointers
+                // load caller's THAT segment THAT = *LCL-1
+                @LCL
+                A=M     // A = address of first local
+                A=A-1   // A = address of caller's THAT
+                D=M     // D = caller's semgnet value
+                @THAT
+                M=D
+
+                // load caller's THIS segment THIS = *LCL-2
+                @LCL
+                A=M     // A = address of first local
+                A=A-1   // A = address of caller's THAT
+                A=A-1   // A = address of caller's THIS
+                D=M     // D = caller's semgnet value
+                @THIS
+                M=D
+
+                // load caller's ARG segment ARG = *LCL-3
+                @LCL
+                A=M     // A = address of first local
+                A=A-1   // A = address of caller's THAT
+                A=A-1   // A = address of caller's THIS
+                A=A-1   // A = address of caller's ARG
+                D=M     // D = caller's semgnet value
+                @ARG
+                M=D
+
+                // load caller's LCL segment
+                @LCL
+                A=M     // A = address of first local
+                A=A-1   // A = address of caller's THAT
+                A=A-1   // A = address of caller's THIS
+                A=A-1   // A = address of caller's ARG
+                A=A-1   // A = address of caller's LCL
+                D=M     // D = caller's semgnet value
+                @LCL
+                M=D
+
+            // jump to return address
+            @R13
+            A=M
+            A=M         // A = return address
+            0;JMP       // jump to return address
+        "});
+
+
+
+
+
+
+
+        // todo!();
+    }
+
+    pub fn call(&mut self, n_vars: i16, symbol: &str) {
+        // todo!();
     }
 }

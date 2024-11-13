@@ -1,29 +1,33 @@
+use std::fs::File;
 use crate::emit_asm::Emitter;
 
 
 
-pub struct CodeWriter<W: std::io::Write> {
-    emit: Emitter<W>,
+pub struct CodeWriter {
+    emit: Emitter,
     first_run: bool,
+    emit_init: bool
 }
 use std::io::{BufWriter, Write};
+use std::sync::Arc;
 use indoc::indoc;
 use crate::parser::{ArithmeticType, Segment};
 
 use super::parser::CommandDetails;
 
-impl<W: std::io::Write> CodeWriter<W> {
+impl CodeWriter {
     // constructor
-    pub fn new(output_stream: W) -> CodeWriter<W> {
+    pub fn new(output_stream: Arc<File>, emit_init: bool) -> CodeWriter {
         let writer = Emitter::new(output_stream);
         
         CodeWriter {
             emit: writer,
             first_run: true,
+            emit_init
         }
     }
     pub fn write_command(&mut self, command: &CommandDetails, source: &String) {
-        if self.first_run {
+        if self.first_run && self.emit_init {
             self.emit.emit_init();
             self.first_run = false;
         }
@@ -66,12 +70,12 @@ impl<W: std::io::Write> CodeWriter<W> {
             CommandDetails::Arithmetic(ArithmeticType::Or) =>   self.emit.or(),
             CommandDetails::Arithmetic(ArithmeticType::Not) =>  self.emit.not(),
 
-            CommandDetails::Label(symbol) => self.emit.label(symbol.as_str()),
-            CommandDetails::Goto(symbol) => self.emit.goto(symbol.as_str()),
-            CommandDetails::IfGoto(symbol) => self.emit.ifgoto(symbol.as_str()),
-            CommandDetails::Function =>     todo!("function"),
-            CommandDetails::Return =>       todo!("return"),
-            CommandDetails::Call =>         todo!("call"),
+            CommandDetails::Label(symbol) =>                    self.emit.label(symbol.as_str()),
+            CommandDetails::Goto(symbol) =>                     self.emit.goto(symbol.as_str()),
+            CommandDetails::IfGoto(symbol) =>                   self.emit.ifgoto(symbol.as_str()),
+            CommandDetails::Function {n_vars, symbol} =>   self.emit.function(*n_vars, symbol.as_str()),
+            CommandDetails::Return =>                                   self.emit._return(),
+            CommandDetails::Call {n_args, symbol} =>       self.emit.call(*n_args, symbol.as_str()),
 
         }
         

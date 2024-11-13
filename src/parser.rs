@@ -120,9 +120,9 @@ pub enum  CommandDetails {
     Pop(Segment, i16),
     Label(String),
     IfGoto(String),
-    Function,
+    Function {n_vars: i16, symbol: String},
     Return,
-    Call,
+    Call{n_args: i16, symbol: String},
     Goto(String)
 }
 
@@ -170,6 +170,7 @@ impl Parser {
                 Some('\n') => {
                     break;
                 }
+                None => {break;}
                 _ => {}
             }
         }
@@ -259,7 +260,7 @@ impl Parser {
         loop {
             if let Some(v) = self.scanner.peek() {
                 // check for a non-alphanumeric character
-                if !v.is_alphabetic() {
+                if ! (v.is_alphabetic() || *v=='.') {
                     break;
                 }
                 string.push(*self.scanner.pop().unwrap());
@@ -274,7 +275,6 @@ impl Parser {
     // reuturns none if end of parsing
     pub fn next_command(&mut self) -> Option<TransformResult<(CommandDetails, String)>> {
         self.consume_line();
-
         self.consume_whitespace();
 
         let rest = self.peek_line();
@@ -319,12 +319,20 @@ impl Parser {
         } else if rest.starts_with("goto") {
             let symbol = self.parse_label_symbol();
             return Some(Ok(((CommandDetails::Goto(symbol), rest.clone()))));
+        } else if rest.starts_with("function") {
+            let symbol = self.parse_label_symbol();
+            let n_vars = self.parse_integer();
+            return Some(Ok((CommandDetails::Function { symbol, n_vars }, rest.clone())));
+        } else if rest.starts_with("call") {
+            let symbol = self.parse_label_symbol();
+            let n_args = self.parse_integer();
+            return Some(Ok((CommandDetails::Call { symbol, n_args }, rest.clone())));
+        } else if rest.starts_with("return") {
+            return Some(Ok((CommandDetails::Return, rest.clone())));
         } else {
             let err = format!("Unimplemented command.'{}'", rest);
             return Some(Err(TransformError::SyntaxError(err, self.scanner.line())));
         }
-
-
     }
 }
 
