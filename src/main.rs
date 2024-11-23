@@ -2,7 +2,7 @@
 
 use crate::transform::traverse_directories;
 use crate::transformer::writer::WriterContext;
-use crate::transform::transform_file as transform_file;
+use crate::transform::transform_file;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;

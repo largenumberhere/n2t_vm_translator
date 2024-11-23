@@ -31,21 +31,50 @@ impl SymbolGenerator {
     }
 }
 
+#[derive(Clone)]
+struct FuncEmitter {
+    returns: usize,
+    calls: usize,
+}
+
+impl FuncEmitter {
+    fn new() -> FuncEmitter {
+        FuncEmitter { returns: 0, calls: 0 }
+    }
+
+    fn call(&mut self) -> usize {
+        let ret = self.calls;
+        self.calls+=1;
+
+        return ret;
+    }
+
+    fn ret(&mut self) -> usize {
+        let ret = self.returns;
+        self.returns+=1;
+
+        return ret;
+    }
+}
+
 pub struct Emitter {
     writer: BufWriter<Arc<File>>,
     symbol_generator: SymbolGenerator,
     emitted_instructions_count: usize,
+    func_emitter: FuncEmitter
 }
 
 #[derive(Clone)]
 pub struct EmitterContext {
     emitted_instructions_count: usize,
+    func_emitter: FuncEmitter
 }
 
 impl Default for EmitterContext {
     fn default() -> Self {
         Self {
             emitted_instructions_count: 0,
+            func_emitter: FuncEmitter::new()
         }
     }
 }
@@ -54,6 +83,7 @@ impl Emitter {
     pub fn close(self) -> EmitterContext {
         return EmitterContext {
             emitted_instructions_count: self.emitted_instructions_count,
+            func_emitter: self.func_emitter,
         };
     }
 
@@ -62,6 +92,7 @@ impl Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
             emitted_instructions_count: 0,
+            func_emitter: FuncEmitter::new()
         }
     }
 
@@ -70,6 +101,7 @@ impl Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
             emitted_instructions_count: emitter_context.emitted_instructions_count,
+            func_emitter: FuncEmitter::new()
         }
     }
 
@@ -112,6 +144,8 @@ impl Emitter {
     fn emitln(&mut self, str: &str) {
         let lines = str.split('\n');
         for line in lines {
+            let line = line.trim();
+
             // if line is instruction, display the instruction number for debugging convenience
             if !line.starts_with("//") && !line.starts_with("(") && !line.is_empty() {
                 let no = self.emitted_instructions_count;
@@ -685,7 +719,7 @@ impl Emitter {
     }
 
     pub fn call(&mut self, n_args: i16, callee_symbol: &str) {
-        let caller_return = format!("{}$ret.1", callee_symbol);
+        let caller_return = format!("{}$ret.{}", callee_symbol, self.func_emitter.call());
 
         self.emitln(indoc! {r"
             // save pos of arguments on stack
