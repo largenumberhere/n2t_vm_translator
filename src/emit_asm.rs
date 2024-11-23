@@ -1,32 +1,29 @@
-
-use std::fs::File;
-use std::io::{BufWriter};
 use indoc::indoc;
+use std::fs::File;
+use std::io::BufWriter;
 
 use crate::parser::Segment;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::sync::Arc;
 
-
-
 struct SymbolGenerator {
     next_id: usize,
-
 }
+
 impl SymbolGenerator {
     fn new() -> SymbolGenerator {
-        SymbolGenerator {
-            next_id: 0,
-
-        }
+        SymbolGenerator { next_id: 0 }
     }
 
-    fn next_commented(&mut self, label_start: &str) -> String  {
-
-        assert!(label_start.split_whitespace().skip(1).next().is_none(), "no whitespace allowed in labels");
+    fn next_commented(&mut self, label_start: &str) -> String {
+        assert!(
+            label_start.split_whitespace().skip(1).next().is_none(),
+            "no whitespace allowed in labels"
+        );
         let mut out = String::new();
-        out.write_fmt(format_args!("_{}_L{}", label_start, self.next_id)).unwrap();
+        out.write_fmt(format_args!("_{}_L{}", label_start, self.next_id))
+            .unwrap();
 
         self.next_id += 1;
 
@@ -37,32 +34,34 @@ impl SymbolGenerator {
 pub struct Emitter {
     writer: BufWriter<Arc<File>>,
     symbol_generator: SymbolGenerator,
-    emitted_instructions_count: usize
+    emitted_instructions_count: usize,
 }
 
 #[derive(Clone)]
 pub struct EmitterContext {
-    emitted_instructions_count: usize
+    emitted_instructions_count: usize,
 }
 
 impl Default for EmitterContext {
     fn default() -> Self {
         Self {
-            emitted_instructions_count: 0
+            emitted_instructions_count: 0,
         }
     }
 }
 
 impl Emitter {
     pub fn close(self) -> EmitterContext {
-        return EmitterContext { emitted_instructions_count: self.emitted_instructions_count };
+        return EmitterContext {
+            emitted_instructions_count: self.emitted_instructions_count,
+        };
     }
 
     pub fn new(stream: Arc<File>) -> Emitter {
         Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
-            emitted_instructions_count: 0
+            emitted_instructions_count: 0,
         }
     }
 
@@ -70,7 +69,7 @@ impl Emitter {
         Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
-            emitted_instructions_count: emitter_context.emitted_instructions_count
+            emitted_instructions_count: emitter_context.emitted_instructions_count,
         }
     }
 
@@ -82,7 +81,7 @@ impl Emitter {
     }
 
     pub fn emit_init(&mut self) {
-    self.emitln(indoc! {r"
+        self.emitln(indoc! {r"
         @Sys.init
         0;JMP
 
@@ -116,10 +115,10 @@ impl Emitter {
             // if line is instruction, display the instruction number for debugging convenience
             if !line.starts_with("//") && !line.starts_with("(") && !line.is_empty() {
                 let no = self.emitted_instructions_count;
-                self.write_fmt(format_args!("{:90}//{:3}\n", line, no)).unwrap();
+                self.write_fmt(format_args!("{:90}//{:3}\n", line, no))
+                    .unwrap();
                 self.emitted_instructions_count += 1;
-            }
-            else {
+            } else {
                 self.write_fmt(format_args!("{:90}\n", line)).unwrap();
             }
         }
@@ -150,8 +149,6 @@ impl Emitter {
             D=M         // D = old top of stack"});
     }
 
-
-
     // push the item in register A onto the stack
     fn a_to_stack(&mut self) {
         self.emitln(indoc! {r"
@@ -161,7 +158,6 @@ impl Emitter {
             A=M-1       // get top of stack
             M=D         // top of stack = D"});
     }
-
 
     fn emit_push_local_a(&mut self) {
         self.emitln(indoc! {r"
@@ -175,8 +171,11 @@ impl Emitter {
     }
 
     fn assign_a(&mut self, value: i16) {
-        let value_string = format!(indoc!{r"
-            @{} // A = {}"},value, value);
+        let value_string = format!(
+            indoc! {r"
+            @{} // A = {}"},
+            value, value
+        );
 
         self.emitln(&value_string.as_str());
     }
@@ -198,7 +197,7 @@ impl Emitter {
         // D = pop1
         self.stack_to_d();
 
-        self.emitln(indoc!{r"
+        self.emitln(indoc! {r"
             @SP         // add last item in stack to D
             M=M-1       // decrement stack pointer
             A=M         // A = stack pointer
@@ -217,25 +216,33 @@ impl Emitter {
         let end = self.symbol_generator.next_commented("end");
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc!(r"
+        self.emitln(indoc!(
+            r"
             @SP
             M=M-1       // decrease stack pointer
             @SP
             A=M
             A=M         // A = pop2
-            D=A-D       // D = pop2 - pop1"));
+            D=A-D       // D = pop2 - pop1"
+        ));
 
         self.emitln(&format!("@{}", is_eq));
-        self.emitln(indoc!(r"
+        self.emitln(indoc!(
+            r"
             D;JEQ       // jump to is_eq if pop1 == pop2, else fallthrough
-            D=0         // D = 0 designating false"));
+            D=0         // D = 0 designating false"
+        ));
         self.emitln(&format!("@{}", end));
-        self.emitln(indoc!(r"
-            0;JMP       // jump to end"));
+        self.emitln(indoc!(
+            r"
+            0;JMP       // jump to end"
+        ));
 
         self.emit_label_start(is_eq.as_str());
-        self.emitln(indoc!(r"
-            D=-1         // D = 1 designating true"));
+        self.emitln(indoc!(
+            r"
+            D=-1         // D = 1 designating true"
+        ));
         self.emit_label_start(end.as_str());
         self.emitln(indoc! {r"
             @SP
@@ -261,7 +268,7 @@ impl Emitter {
         self.emitln("");
     }
 
-      // tested!
+    // tested!
     pub fn lt(&mut self) {
         let is_lt = self.symbol_generator.next_commented("is_lt");
         let is_not_lt = self.symbol_generator.next_commented("is_not_lt");
@@ -269,7 +276,7 @@ impl Emitter {
 
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc!{r"
+        self.emitln(indoc! {r"
             @SP
             A=M-1       // A = address of top item on stack
             A=M         // A = pop2
@@ -277,20 +284,20 @@ impl Emitter {
 
         self.emitln(&format!("@{}   //A = is_lt", is_lt));
         self.emitln(indoc! {r"
-            D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough"});
+        D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough"});
         self.emit_label_start(is_not_lt.as_str());
         self.emitln(indoc! {r"
-            D=0"});
+        D=0"});
         self.emitln(&format!("@{}", lt_end));
         self.emitln(indoc! {r"
-            0;JMP"});
+        0;JMP"});
 
         self.emit_label_start(is_lt.as_str());
-        self.emitln(indoc!{r"
-            D=-1"});
+        self.emitln(indoc! {r"
+        D=-1"});
 
         self.emit_label_start(lt_end.as_str());
-        self.emitln(indoc!{r"
+        self.emitln(indoc! {r"
             @SP
             A=M-1
             M=D         // write value to top of stack"});
@@ -311,18 +318,20 @@ impl Emitter {
             A=M         // A = address of stack top
             D=M-D       // pop2 - pop1"});
         self.emitln(&format!("@{}   //A = is_gt", is_gt));
-        self.emitln(indoc!{r"
+        self.emitln(indoc! {r"
             D;JGT   // if pop2 > pop1 then goto is_gt, else
             D=0     // not gt"});
         self.emitln(&format!("@{}   //A = end", end));
-        self.emitln(indoc!(r"
-            0;JMP"));
+        self.emitln(indoc!(
+            r"
+            0;JMP"
+        ));
         self.emit_label_start(is_gt.as_str());
         self.emitln(indoc! {r"
-            D=-1    //yes gt"});
+        D=-1    //yes gt"});
         self.emit_label_start(end.as_str());
         self.emitln(indoc! {r"
-            A=D"});
+        A=D"});
         self.a_to_stack();
         self.emitln("");
     }
@@ -373,19 +382,21 @@ impl Emitter {
 
     fn segment_symbol_str(&self, segment: Segment, _offset: i16) -> &str {
         return match segment {
-            Segment::Local => {"LCL"}
-            Segment::Constant => {unreachable!("Constant is not a real segment")}
-            Segment::Argument => {"ARG"}
-            Segment::Temp => {"TMP"}
-            Segment::Static => {"STATIC"}
-            Segment::That => {"THAT"}
-            Segment::This => {"THIS"}
-            Segment::Pointer => { "THIS"}
+            Segment::Local => "LCL",
+            Segment::Constant => {
+                unreachable!("Constant is not a real segment")
+            }
+            Segment::Argument => "ARG",
+            Segment::Temp => "TMP",
+            Segment::Static => "STATIC",
+            Segment::That => "THAT",
+            Segment::This => "THIS",
+            Segment::Pointer => "THIS",
         };
     }
 
     // move the value at offset n from the segment onto the stack
-    fn pop_non_stack_segment(&mut self, segment: Segment, offset:i16) {
+    fn pop_non_stack_segment(&mut self, segment: Segment, offset: i16) {
         // let not_temp_segment;
         let segment_symbol = self.segment_symbol_str(segment, offset);
 
@@ -395,14 +406,14 @@ impl Emitter {
                 self.emitln(&format!("@{}", segment_symbol));
                 self.emitln(indoc! {r"
                 D=A         // D = segment start"});
-            },
+            }
             Segment::Temp => {
                 self.emitln(indoc! {r"
                 @5
                 D=A
             "});
-            },
-            _=> {
+            }
+            _ => {
                 self.emitln(&format!("@{}", segment_symbol));
                 self.emitln(indoc! {r"
                 D=M         // D = segment start"});
@@ -434,12 +445,10 @@ impl Emitter {
             M=M-1       // Decrease stack pointer"});
 
         self.emitln("");
-
     }
 
     // move the value from the stack to the segment at offset n
-    fn push_non_stack_segment(&mut self, segment: Segment, offset:i16) {
-
+    fn push_non_stack_segment(&mut self, segment: Segment, offset: i16) {
         let segment_symbol = self.segment_symbol_str(segment, offset);
 
         // D = address of segment start
@@ -448,14 +457,14 @@ impl Emitter {
                 self.emitln(&format!("@{}", segment_symbol));
                 self.emitln(indoc! {r"
                 D=A         // D = segment start"});
-            },
+            }
             Segment::Temp => {
                 self.emitln(indoc! {r"
                 @5
                 D=A
             "});
-            },
-            _=> {
+            }
+            _ => {
                 self.emitln(&format!("@{}", segment_symbol));
                 self.emitln(indoc! {r"
                 D=M         // D = segment start"});
@@ -499,9 +508,9 @@ impl Emitter {
     // take value off the stack and write it to the 'that' segment at offset n
     pub fn push_that_n(&mut self, n: i16) {
         self.push_non_stack_segment(Segment::That, n);
-     }
+    }
 
-    pub fn push_arg_n(&mut self, n:i16) {
+    pub fn push_arg_n(&mut self, n: i16) {
         self.push_non_stack_segment(Segment::Argument, n);
     }
 
@@ -542,15 +551,15 @@ impl Emitter {
     pub fn ifgoto(&mut self, symbol: &str) {
         self.stack_to_d();
         self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
-        self.emitln(indoc!{r"
-            D;JNE"});
+        self.emitln(indoc! {r"
+        D;JNE"});
         self.emitln("");
     }
 
     pub fn goto(&mut self, symbol: &str) {
         self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
-        self.emitln(indoc!{r"
-            0;JMP"});
+        self.emitln(indoc! {r"
+        0;JMP"});
         self.emitln("");
     }
 
@@ -579,9 +588,6 @@ impl Emitter {
             "});
             }
         }
-
-
-
     }
 
     // tested
@@ -690,7 +696,7 @@ impl Emitter {
         "});
 
         for i in 0..n_args {
-            self.emitln( format!("// pass argument {}", i).as_str());
+            self.emitln(format!("// pass argument {}", i).as_str());
             self.stack_to_d();
             self.emitln(indoc! {r"
                 @SP
