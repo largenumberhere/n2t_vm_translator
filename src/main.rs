@@ -1,15 +1,14 @@
 #![allow(unused)]
 
-use crate::transformer::traverse_directories;
-use crate::writer::WriterContext;
+use crate::transform::traverse_directories;
+use crate::transformer::writer::WriterContext;
+use crate::transform::transform_file as transform_file;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 
-mod emit_asm;
-mod parser;
 mod transformer;
-mod writer;
+use transformer::{transform};
 
 fn main() {
     let mut translate_error = false;
@@ -35,7 +34,7 @@ fn main() {
     if path.is_dir() {
         traverse_directories(path, &mut translate_error, out_steam, inject_init, context);
     } else {
-        transformer::transform_file(context, path, out_steam, &mut translate_error, inject_init);
+        transform_file(context, path, out_steam, &mut translate_error, inject_init);
     }
 
     if translate_error {

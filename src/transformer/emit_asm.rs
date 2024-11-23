@@ -2,10 +2,10 @@ use indoc::indoc;
 use std::fs::File;
 use std::io::BufWriter;
 
-use crate::parser::Segment;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::sync::Arc;
+use crate::transformer::Segment;
 
 struct SymbolGenerator {
     next_id: usize,

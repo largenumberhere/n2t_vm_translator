@@ -1,5 +1,5 @@
-use crate::emit_asm::{Emitter, EmitterContext};
-use crate::parser::{ArithmeticType, Segment};
+use super::emit_asm::{Emitter, EmitterContext};
+use super::parser::{ArithmeticType, Segment};
 use std::fs::File;
 use std::sync::Arc;
 

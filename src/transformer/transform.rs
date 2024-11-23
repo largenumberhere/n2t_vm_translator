@@ -3,9 +3,9 @@ use std::io::Read;
 
 use std::path::Path;
 
-use crate::parser::Parser;
-use crate::writer::{CodeWriter, WriterContext};
-use crate::{parser, transformer, writer};
+use super::parser::Parser;
+use super::writer::{CodeWriter, WriterContext};
+use super::{parser, transform as transformer, writer};
 use std::sync::Arc;
 
 pub type TransformResult<T> = Result<T, TransformError>;
