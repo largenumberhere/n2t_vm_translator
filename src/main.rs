@@ -1,5 +1,5 @@
-use std::fs::DirEntry;
-use std::io::{Read, Write};
+#![allow(unused)]
+
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;

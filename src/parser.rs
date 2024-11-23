@@ -1,5 +1,4 @@
-use std::{fs::File, io::{BufReader, Read}};
-use std::fmt::Display;
+use std::{ io::{Read}};
 use crate::transformer::TransformError;
 use crate::transformer::TransformResult;
 
@@ -17,9 +16,9 @@ impl Scanner {
         }
     }
 
-    pub fn cursor(&self) -> usize {
-        self.cursor
-    }
+    // pub fn cursor(&self) -> usize {
+    //     self.cursor
+    // }
 
     pub fn peek(&self) -> Option<&char> {
         self.characters.get(self.cursor)
@@ -29,9 +28,9 @@ impl Scanner {
         self.characters.get(self.cursor+len)
     }
 
-    pub fn is_done(&self) -> bool {
-        self.cursor == self.characters.len()
-    }
+    // pub fn is_done(&self) -> bool {
+    //     self.cursor == self.characters.len()
+    // }
 
     pub fn pop(&mut self) -> Option<&char> {
         let current = self.characters.get(self.cursor);
@@ -43,28 +42,28 @@ impl Scanner {
         }
     }
 
-    pub fn discard_n(&mut self, n: usize) {
-        self.cursor+=n;
-    }
+    // pub fn discard_n(&mut self, n: usize) {
+    //     self.cursor+=n;
+    // }
     
-    pub fn take(&mut self, target: &char) -> bool {
-        let current = self.characters.get(self.cursor);
-        if Some(target) == current {
-            self.cursor+=1;
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    pub fn peek_rest(&self) -> String {
-        let mut rest = String::new();
-        for i in self.cursor.. self.characters.len() {
-            rest.push(self.characters[i]);
-        }
-
-        return rest;
-    }
+    // pub fn take(&mut self, target: &char) -> bool {
+    //     let current = self.characters.get(self.cursor);
+    //     if Some(target) == current {
+    //         self.cursor+=1;
+    //         return true;
+    //     } else {
+    //         return false;
+    //     }
+    // }
+    //
+    // pub fn peek_rest(&self) -> String {
+    //     let mut rest = String::new();
+    //     for i in self.cursor.. self.characters.len() {
+    //         rest.push(self.characters[i]);
+    //     }
+    //
+    //     return rest;
+    // }
 
     pub fn line(&self) -> usize {
         // this should only be used under error conditions so it doesn't need to be fast
@@ -164,7 +163,7 @@ impl Parser {
 
     fn consume_line(&mut self) -> String {
         let line = self.peek_line();
-        for i in 0.. {
+        loop {
             let c = self.scanner.pop(); 
             match c {
                 Some('\n') => {
@@ -318,7 +317,7 @@ impl Parser {
             return Some(Ok((CommandDetails::IfGoto(symbol), rest.clone())));
         } else if rest.starts_with("goto") {
             let symbol = self.parse_label_symbol();
-            return Some(Ok(((CommandDetails::Goto(symbol), rest.clone()))));
+            return Some(Ok((CommandDetails::Goto(symbol), rest.clone())));
         } else if rest.starts_with("function") {
             let symbol = self.parse_label_symbol();
             let n_vars = self.parse_integer();
@@ -337,71 +336,71 @@ impl Parser {
 }
 
 
-fn ignore_whitespace(reader: &mut BufReader<File>) {
-    let mut byte = [0u8];
-    loop {
+// fn ignore_whitespace(reader: &mut BufReader<File>) {
+//     let mut byte = [0u8];
+//     loop {
+//
+//         reader.read_exact(&mut byte).unwrap();
+//         let c = byte[0] as char;
+//         if !c.is_whitespace() {
+//             continue;
+//         }
+//     }
+//
+// }
 
-        reader.read_exact(&mut byte).unwrap();
-        let c = byte[0] as char;
-        if !c.is_whitespace() {
-            continue;
-        }
-    }
+// fn read_contiguous(line: &str) -> (&str, String) {
+//     let mut cursor = line.chars();
+//     let mut ahead_cursor = line.chars();
+//
+//     let mut string = String::new();
+//     loop {
+//         let next = ahead_cursor.next();
+//         match next {
+//             Some(v) => {
+//                 if v.is_whitespace() {
+//                     break;
+//                 }
+//
+//                 let more = cursor.next().unwrap();
+//                 string.push(more);
+//             }
+//             None => {
+//                 break;
+//             }
+//         }
+//
+//     }
+//
+//     return (cursor.as_str(), string);
+// }
 
-}
+// fn read_u16(line: &str) -> (&str, u16) {
+//     let (rest,  block) = read_contiguous(line);
+//     if block.is_empty() {
+//         panic!("no number found");
+//     }
+//
+//     let num = block.parse::<u16>().expect("Failed to parse u16");
+//
+//     (rest, num)
+//
+// }
 
-fn read_contiguous(line: &str) -> (&str, String) {
-    let mut cursor = line.chars();
-    let mut ahead_cursor = line.chars();
-
-    let mut string = String::new();
-    loop {
-        let next = ahead_cursor.next();
-        match next {
-            Some(v) => {
-                if v.is_whitespace() {
-                    break;
-                }
-
-                let more = cursor.next().unwrap();
-                string.push(more);
-            }
-            None => {
-                break;
-            }
-        }
-
-    }
-
-    return (cursor.as_str(), string);
-}
-
-fn read_u16(line: &str) -> (&str, u16) {
-    let (rest,  block) = read_contiguous(line);
-    if block.is_empty() {
-        panic!("no number found");
-    }
-
-    let num = block.parse::<u16>().expect("Failed to parse u16");
-    
-    (rest, num)
-    
-}
-
-fn skip_whitespace(line: &str) -> &str{
-    let mut cursor = line.chars();
-    let mut ahead_cursor = cursor.clone();
-    loop {
-        let next = ahead_cursor.next();
-        if let Some(v) = next {
-            if v.is_whitespace() {
-                let _ = cursor.next();
-                continue;
-            }
-        }
-
-        break;
-    }
-
-    return cursor.as_str();
-}
+// fn skip_whitespace(line: &str) -> &str{
+//     let mut cursor = line.chars();
+//     let mut ahead_cursor = cursor.clone();
+//     loop {
+//         let next = ahead_cursor.next();
+//         if let Some(v) = next {
+//             if v.is_whitespace() {
+//                 let _ = cursor.next();
+//                 continue;
+//             }
+//         }
+//
+//         break;
+//     }
+//
+//     return cursor.as_str();
+// }

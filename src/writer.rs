@@ -8,9 +8,7 @@ pub struct CodeWriter {
     first_run: bool,
     emit_init: bool
 }
-use std::io::{BufWriter, Write};
 use std::sync::Arc;
-use indoc::indoc;
 use crate::parser::{ArithmeticType, Segment};
 
 use super::parser::CommandDetails;
@@ -39,6 +37,7 @@ impl CodeWriter {
     }
 
     // constructor
+
     pub fn new(output_stream: Arc<File>, emit_init: bool) -> CodeWriter {
         let writer = Emitter::new(output_stream);
         

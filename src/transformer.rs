@@ -1,12 +1,12 @@
-use std::ffi::c_long;
+
 use std::fs::{DirEntry, File};
-use std::io::{Read, Write};
-use std::ops::Deref;
+use std::io::{Read};
+
 use std::path::Path;
-use std::rc::Rc;
+
 use std::sync::Arc;
 use crate::parser::Parser;
-use crate::{assume_output_path, parser, transformer, writer};
+use crate::{parser, transformer, writer};
 use crate::writer::{CodeWriter, WriterContext};
 
 pub type TransformResult<T> = Result<T, TransformError> ;
@@ -72,7 +72,7 @@ pub fn visit_dir_entry(dir: DirEntry, out_stream: Arc<File>, writer_context: Wri
 
 pub fn traverse_directories(path: &Path, translate_error: &mut bool, out_stream: Arc<File>, emit_init: bool, writer_context: WriterContext) {
     let mut context = writer_context;
-    let out_path = assume_output_path(path);
+    // let out_path = assume_output_path(path);
     for entry in std::fs::read_dir(path).unwrap()
     {
         context = visit_dir_entry(entry.unwrap(), out_stream.clone(), context , translate_error, emit_init);

@@ -1,13 +1,13 @@
-use std::cmp::PartialEq;
+
 use std::fs::File;
 use std::io::{BufWriter};
 use indoc::indoc;
-use rusty_parser::str;
+
 use crate::parser::Segment;
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::sync::Arc;
-use crate::parser::Segment::This;
+
 
 
 struct SymbolGenerator {
@@ -371,7 +371,7 @@ impl Emitter {
         self.emitln("");
     }
 
-    fn segment_symbol_str(&self, segment: Segment, offset: i16) -> &str {
+    fn segment_symbol_str(&self, segment: Segment, _offset: i16) -> &str {
         return match segment {
             Segment::Local => {"LCL"}
             Segment::Constant => {unreachable!("Constant is not a real segment")}
@@ -533,22 +533,22 @@ impl Emitter {
         self.pop_non_stack_segment(Segment::Pointer, n);
     }
 
-    const user_label_prefix: &'static str = "user_";
+    const USER_LABEL_PREFIX: &'static str = "user_";
     pub fn label(&mut self, symbol: &str) {
-        self.emitln(&format! {r"({}{})", Self::user_label_prefix, symbol});
+        self.emitln(&format! {r"({}{})", Self::USER_LABEL_PREFIX, symbol});
     }
 
     // jump to the symbol if stack top > 0
     pub fn ifgoto(&mut self, symbol: &str) {
         self.stack_to_d();
-        self.emitln(&format! {r"@{}{}", Self::user_label_prefix, symbol});
+        self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
         self.emitln(indoc!{r"
             D;JNE"});
         self.emitln("");
     }
 
     pub fn goto(&mut self, symbol: &str) {
-        self.emitln(&format! {r"@{}{}", Self::user_label_prefix, symbol});
+        self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
         self.emitln(indoc!{r"
             0;JMP"});
         self.emitln("");
@@ -569,7 +569,7 @@ impl Emitter {
         "});
 
             // zero the locals
-            for i in 0..n_vars {
+            for _ in 0..n_vars {
                 self.emitln(indoc! {r"
                @R14
                M=0
