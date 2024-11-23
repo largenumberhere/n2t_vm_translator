@@ -1,5 +1,5 @@
 use std::fs::File;
-use crate::emit_asm::Emitter;
+use crate::emit_asm::{Emitter, EmitterContext};
 
 
 
@@ -15,7 +15,29 @@ use crate::parser::{ArithmeticType, Segment};
 
 use super::parser::CommandDetails;
 
+#[derive(Clone)]
+pub struct WriterContext {
+    emitter_sate: EmitterContext,
+}
+
+impl Default for WriterContext {
+    fn default() -> Self {
+        Self {
+            emitter_sate: EmitterContext::default()
+        }
+    }
+}
 impl CodeWriter {
+    pub fn with_context(writer_context: WriterContext, output_stream: Arc<File>, emit_init: bool) -> Self {
+        let writer = Emitter::with_context(writer_context.emitter_sate, output_stream);
+
+        CodeWriter {
+            emit: writer,
+            first_run: true,
+            emit_init
+        }
+    }
+
     // constructor
     pub fn new(output_stream: Arc<File>, emit_init: bool) -> CodeWriter {
         let writer = Emitter::new(output_stream);
@@ -26,6 +48,13 @@ impl CodeWriter {
             emit_init
         }
     }
+
+    pub fn close(self) -> WriterContext {
+        WriterContext {
+            emitter_sate: self.emit.close()
+        }
+    }
+
     pub fn write_command(&mut self, command: &CommandDetails, source: &String) {
         if self.first_run && self.emit_init {
             self.emit.emit_init();

@@ -12,6 +12,7 @@ mod transformer;
 
 
 use crate::transformer::traverse_directories;
+use crate::writer::WriterContext;
 
 fn main() {
 
@@ -32,14 +33,14 @@ fn main() {
     };
 
 
-
+    let context = WriterContext::default();
     let path = Path::new(&arg1);
     let out_path = assume_output_path(path);
     let out_steam = Arc::new(std::fs::File::create(&out_path).unwrap());
     if path.is_dir() {
-        traverse_directories(path, &mut translate_error, out_steam, inject_init);
+        traverse_directories(path, &mut translate_error, out_steam, inject_init, context);
     } else {
-        transformer::transform_file(path, out_steam , &mut translate_error, inject_init);
+        transformer::transform_file(context, path, out_steam , &mut translate_error, inject_init);
     }
 
     if translate_error {

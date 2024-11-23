@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use crate::parser::Parser;
 use crate::{assume_output_path, parser, transformer, writer};
-use crate::writer::CodeWriter;
+use crate::writer::{CodeWriter, WriterContext};
 
 pub type TransformResult<T> = Result<T, TransformError> ;
 
@@ -26,7 +26,7 @@ impl std::fmt::Display for TransformError {
     }
 }
 
-pub fn transform_file(in_file_path: &Path, out_steam: Arc<File>, errored: &mut bool, emit_init: bool) {
+pub fn transform_file(writer_context: WriterContext ,in_file_path: &Path, out_steam: Arc<File>, errored: &mut bool, emit_init: bool) -> WriterContext {
     let out_path = crate::assume_output_path(&in_file_path);
 
     let file_in = std::fs::File::open(&in_file_path)
@@ -34,45 +34,54 @@ pub fn transform_file(in_file_path: &Path, out_steam: Arc<File>, errored: &mut b
 
     println!("Transforming file '{:60}'   ==>   '{}'", in_file_path.display(), out_path.display());
 
-    let result = transform(file_in, out_steam.clone(), emit_init);
-    match result {
-        Ok(_) => {},
+    let result = transform(writer_context.clone(),file_in, out_steam.clone(), emit_init);
+    let new_state = match result {
+        Ok(s) => {s},
         Err(error) => {
             eprintln!("                  ^----- '{:?}'", error.to_string());
             *errored = true;
+
+            writer_context
         }
-    }
+    };
+
+    return new_state;
 }
 
-pub fn visit_dir_entry(dir: DirEntry, out_stream: Arc<File>, translate_error: &mut bool, inject_init: bool) {
+pub fn visit_dir_entry(dir: DirEntry, out_stream: Arc<File>, writer_context: WriterContext, translate_error: &mut bool, inject_init: bool) -> WriterContext {
+    let mut context = writer_context;
+
     // recursively visit all subdirectories
     if dir.file_type().unwrap().is_dir() {
         let path = dir.path();
         for d in path.read_dir().unwrap() {
-            visit_dir_entry(d.unwrap(), out_stream.clone(), translate_error, inject_init);
+            context = visit_dir_entry(d.unwrap(), out_stream.clone(), context,translate_error, inject_init);
         }
     } else {
         let path = dir.path();
         if path.extension() == Some("vm".as_ref()) {
-            transformer::transform_file(path.as_path(), out_stream, translate_error, inject_init);
+            context = transformer::transform_file(context ,path.as_path(), out_stream, translate_error, inject_init);
         }
     }
+
+    context
 }
 
 
 
 
-pub fn traverse_directories(path: &Path, translate_error: &mut bool, out_stream: Arc<File>, emit_init: bool) {
+pub fn traverse_directories(path: &Path, translate_error: &mut bool, out_stream: Arc<File>, emit_init: bool, writer_context: WriterContext) {
+    let mut context = writer_context;
     let out_path = assume_output_path(path);
     for entry in std::fs::read_dir(path).unwrap()
     {
-        visit_dir_entry(entry.unwrap(), out_stream.clone(), translate_error, emit_init);
+        context = visit_dir_entry(entry.unwrap(), out_stream.clone(), context , translate_error, emit_init);
     }
 }
-fn transform<R: Read>(in_stream: R, out_stream: Arc<File>, emit_init: bool) -> Result<(), TransformError> {
+fn transform<R: Read>(writer_context: WriterContext ,in_stream: R, out_stream: Arc<File>, emit_init: bool) -> Result<WriterContext, TransformError> {
 
     let mut reader: Parser = parser::Parser::new(in_stream);
-    let mut writer: CodeWriter= writer::CodeWriter::new(out_stream, emit_init);
+    let mut writer: CodeWriter= writer::CodeWriter::with_context(writer_context,out_stream, emit_init);
 
     while let Some(val) = reader.next_command() {
          let (command, line) = val?;
@@ -80,5 +89,5 @@ fn transform<R: Read>(in_stream: R, out_stream: Arc<File>, emit_init: bool) -> R
         writer.write_command(&command, &line);
     }
 
-    return Ok(());
+    return Ok(writer.close());
 }

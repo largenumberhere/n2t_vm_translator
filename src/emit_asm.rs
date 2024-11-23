@@ -40,13 +40,37 @@ pub struct Emitter {
     emitted_instructions_count: usize
 }
 
+#[derive(Clone)]
+pub struct EmitterContext {
+    emitted_instructions_count: usize
+}
+
+impl Default for EmitterContext {
+    fn default() -> Self {
+        Self {
+            emitted_instructions_count: 0
+        }
+    }
+}
 
 impl Emitter {
+    pub fn close(self) -> EmitterContext {
+        return EmitterContext { emitted_instructions_count: self.emitted_instructions_count };
+    }
+
     pub fn new(stream: Arc<File>) -> Emitter {
         Emitter {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
             emitted_instructions_count: 0
+        }
+    }
+
+    pub fn with_context(emitter_context: EmitterContext, stream: Arc<File>) -> Self {
+        Emitter {
+            writer: BufWriter::new(stream),
+            symbol_generator: SymbolGenerator::new(),
+            emitted_instructions_count: emitter_context.emitted_instructions_count
         }
     }
 
@@ -60,6 +84,11 @@ impl Emitter {
     pub fn emit_init(&mut self) {
     self.emitln(indoc! {r"
         @Sys.init
+        0;JMP
+
+        // end of program - halt
+        @_L_DEADLOOP
+        (_L_DEADLOOP)
         0;JMP
     "});
         // // initalize segments
@@ -527,18 +556,31 @@ impl Emitter {
 
     // a function declaration
     pub fn function(&mut self, n_vars: i16, symbol: &str) {
-        // // initialize locals of count n_vars
-        // self.emitln(indoc! {r"
-        //     @LCL
-        // "});
-        // for i in 0..n_vars {
-        //     self.emitln(indoc!{r"
-        //         M=0     // zero the local variable
-        //         A=A+1   // increment counter
-        //     "});
-        // }
         // inject label. Todo: make it comply with mangling rules
         self.emit_label_start(symbol);
+
+        if n_vars > 0 {
+            self.emitln(indoc! {r"
+            @LCL
+            A=M
+            D=M
+            @R14
+            M=D
+        "});
+
+            // zero the locals
+            for i in 0..n_vars {
+                self.emitln(indoc! {r"
+               @R14
+               M=0
+
+               @R14
+               M=M+1
+            "});
+            }
+        }
+
+
 
     }
 
@@ -634,17 +676,106 @@ impl Emitter {
             A=M         // A = return address
             0;JMP       // jump to return address
         "});
-
-
-
-
-
-
-
-        // todo!();
     }
 
-    pub fn call(&mut self, n_vars: i16, symbol: &str) {
-        // todo!();
+    pub fn call(&mut self, n_args: i16, callee_symbol: &str) {
+        let caller_return = format!("{}$ret.1", callee_symbol);
+
+        self.emitln(indoc! {r"
+            // save pos of arguments on stack
+            @SP
+            D=M
+            @R13
+            M=D
+        "});
+
+        for i in 0..n_args {
+            self.emitln( format!("// pass argument {}", i).as_str());
+            self.stack_to_d();
+            self.emitln(indoc! {r"
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+            "});
+        }
+
+        self.emitln(indoc! {r"// save a return address"});
+        self.emitln(&format!("@{}", caller_return.as_str()));
+        self.emitln(indoc! {r"
+            D=A
+            @SP
+            A=M
+            M=D
+            @SP
+            M=M+1
+
+            // save caller stackframe
+                // locals
+                @LCL
+                // A=M
+                D=M
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+
+                // arg
+                @ARG
+                // A=M
+                D=M
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+
+                // this
+                @THIS
+                // A=M
+                D=M
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+
+                // that
+                @THAT
+                // A=M
+                D=M
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+
+            // setup segment pointers for callee
+                // ARG = address of first argument passed
+                @R13
+                D=M
+                @ARG
+                M=D
+
+                // LCL = start of caller's stackframe
+                @SP
+                D=M
+                @LCL
+                A=M
+                M=D
+            // jump
+
+        "});
+
+        // jump
+        self.emitln(&format!("@{}", callee_symbol));
+        self.emitln(indoc! {r"
+            0;JMP
+        "});
+
+        // declare callee return address
+        self.emit_label_start(caller_return.as_str());
     }
 }
