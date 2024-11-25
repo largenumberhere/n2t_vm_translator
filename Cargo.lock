@@ -13,12 +13,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indoc"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
-
-[[package]]
 name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -43,12 +37,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusty_parser"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d4bd88bbc485acc1f3d26157ad5dd519e08c0e5a265a9601a8245b4eb195cd"
-
-[[package]]
 name = "syn"
 version = "2.0.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,6 +58,4 @@ name = "vm_translator"
 version = "0.1.0"
 dependencies = [
  "hack_macro",
- "indoc",
- "rusty_parser",
 ]
