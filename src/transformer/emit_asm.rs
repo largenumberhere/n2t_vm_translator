@@ -6,7 +6,7 @@ use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::sync::Arc;
 use crate::transformer::Segment;
-use hack_macro::hack;
+use hack_macro::{emit_fmt_hack, emit_hack, fmt_hack, hack_str};
 
 struct SymbolGenerator {
     next_id: usize,
@@ -114,19 +114,20 @@ impl Emitter {
     }
 
     pub fn emit_init(&mut self) {
-        self.emitln(indoc! {r"
-        @Sys.init
-        0;JMP
+        emit_hack! {r"
+            @Sys.init
+            0;JMP
 
-        // end of program - halt
-        @_L_DEADLOOP
-        (_L_DEADLOOP)
-        0;JMP
-    "});
+            // end of program - halt
+            @_L_DEADLOOP
+            (_L_DEADLOOP)
+            0;JMP
+        "};
+        self.emitln("");
         // // initalize segments
         // // 1. clear the memory if needed
         //
-        // let asm: &str= indoc!{r"
+        // let asm: &str= hack_str!{r"
         //     // // emit_init: write 256 to stack pointer
         //     // @256
         //     // D=A
@@ -160,70 +161,78 @@ impl Emitter {
     }
 
     fn emit_label_start(&mut self, symbol: &str) {
-        self.emitln(&format!("({})", symbol))
+        emit_fmt_hack!("({})", symbol);
     }
+
 
     // puts the last item into register A
     // clobbers A,D
     // tested
     fn stack_to_a(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             M=M-1       // Decrement stack pointer
             A=M         // A = Stack pointer
-            A=M         // D = old top of stack"});
+            A=M         // D = old top of stack
+        "};
     }
 
     // tested
     // clobbers, A, D
     fn stack_to_d(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             M=M-1       // Decrement stack pointer
             A=M         // A = Stack pointer
-            D=M         // D = old top of stack"});
+            D=M         // D = old top of stack
+        "};
     }
 
     // push the item in register A onto the stack
     fn a_to_stack(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             D=A
             @SP
             M=M+1       // increase stack pointer
             A=M-1       // get top of stack
-            M=D         // top of stack = D"});
+            M=D         // top of stack = D
+        "};
     }
 
     fn emit_push_local_a(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             // emit_push_a
             D=A
             @LCL
             A=M     // A=*LCL
             M=D     // **LCL = D
             @SP
-            M=M+1   //*LCL = *LCL+1"});
+            M=M+1   //*LCL = *LCL+1
+        "};
     }
 
     fn assign_a(&mut self, value: i16) {
-        let value_string = format!(
-            indoc! {r"
-            @{} // A = {}"},
-            value, value
-        );
+        emit_fmt_hack!(r"
+            @{0} // A = {0}
+        ", value);
+    }
 
-        self.emitln(&value_string.as_str());
+    fn assign_a_str(&mut self, value: &str) {
+        emit_fmt_hack!(r"
+            @{0}    // A = {0}
+        ", value);
     }
 
     // tested
     pub fn push_const(&mut self, val: i16) {
         self.assign_a(val);
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             D=A
             @SP
             M=M+1       // increase stack pointer
             A=M-1       // get stack address to write to
-            M=D         // stack top = D"});
+            M=D         // stack top = D
+        "};
         self.emitln("");
     }
 
@@ -232,15 +241,15 @@ impl Emitter {
         // D = pop1
         self.stack_to_d();
 
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP         // add last item in stack to D
             M=M-1       // decrement stack pointer
             A=M         // A = stack pointer
             A=M         // A = pop2
             D=D+A       // D = pop1 + pop2
-            A=D         // A = result"});
+            A=D         // A = result
+        "};
         self.a_to_stack();
-
         self.emitln("");
     }
 
@@ -251,39 +260,38 @@ impl Emitter {
         let end = self.symbol_generator.next_commented("end");
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc!(
-            r"
+        emit_hack! {r"
             @SP
             M=M-1       // decrease stack pointer
             @SP
             A=M
             A=M         // A = pop2
-            D=A-D       // D = pop2 - pop1"
-        ));
+            D=A-D       // D = pop2 - pop1
+        "};
 
-        self.emitln(&format!("@{}", is_eq));
-        self.emitln(indoc!(
-            r"
+        emit_fmt_hack!("@{}", is_eq);
+        emit_hack! {r"
             D;JEQ       // jump to is_eq if pop1 == pop2, else fallthrough
             D=0         // D = 0 designating false"
-        ));
-        self.emitln(&format!("@{}", end));
-        self.emitln(indoc!(
+        };
+        emit_fmt_hack!("@{}", end);
+        emit_hack! {
             r"
             0;JMP       // jump to end"
-        ));
+        };
 
         self.emit_label_start(is_eq.as_str());
-        self.emitln(indoc!(
+        emit_hack! {
             r"
             D=-1         // D = 1 designating true"
-        ));
+        };
         self.emit_label_start(end.as_str());
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             M=M+1       // increase stack pointer
             A=M-1       // get pointer to top of stack
-            M=D         // write result on stack"});
+            M=D         // write result on stack
+        "};
 
         self.emitln("");
     }
@@ -291,14 +299,15 @@ impl Emitter {
     // tested!
     pub fn sub(&mut self) {
         self.stack_to_d();
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1       // get pointer to top item in stack
             A=M         // A = value from stack
             D=A-D       // D = pop2 - pop1
             @SP
             A=M-1
-            M=D         // write result on stack"});
+            M=D         // write result on stack"
+        };
 
         self.emitln("");
     }
@@ -311,31 +320,37 @@ impl Emitter {
 
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1       // A = address of top item on stack
             A=M         // A = pop2
-            D=A-D       // D = pop2 - pop1"});
+            D=A-D       // D = pop2 - pop1
+        "};
 
-        self.emitln(&format!("@{}   //A = is_lt", is_lt));
-        self.emitln(indoc! {r"
-        D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough"});
+        self.assign_a_str(&is_lt);
+        emit_hack! {r"
+            D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough
+        "};
         self.emit_label_start(is_not_lt.as_str());
-        self.emitln(indoc! {r"
-        D=0"});
-        self.emitln(&format!("@{}", lt_end));
-        self.emitln(indoc! {r"
-        0;JMP"});
+        emit_hack! {r"
+            D=0
+        "};
+        self.assign_a_str(&lt_end);
+        emit_hack! {r"
+            0;JMP
+        "};
 
         self.emit_label_start(is_lt.as_str());
-        self.emitln(indoc! {r"
-        D=-1"});
+        emit_hack! {r"
+            D=-1
+        "};
 
         self.emit_label_start(lt_end.as_str());
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1
-            M=D         // write value to top of stack"});
+            M=D         // write value to top of stack
+        "};
 
         self.emitln("");
     }
@@ -347,38 +362,44 @@ impl Emitter {
 
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             M=M-1       // decrease stack pointer
             A=M         // A = address of stack top
-            D=M-D       // pop2 - pop1"});
-        self.emitln(&format!("@{}   //A = is_gt", is_gt));
-        self.emitln(indoc! {r"
+            D=M-D       // pop2 - pop1
+        "};
+        self.assign_a_str(&is_gt);
+        emit_hack!{r"
             D;JGT   // if pop2 > pop1 then goto is_gt, else
-            D=0     // not gt"});
-        self.emitln(&format!("@{}   //A = end", end));
-        self.emitln(indoc!(
+            D=0     // not gt
+        "};
+        self.assign_a_str(&end);
+        emit_hack!(
             r"
             0;JMP"
-        ));
+        );
+        self.emitln("");
         self.emit_label_start(is_gt.as_str());
-        self.emitln(indoc! {r"
-        D=-1    //yes gt"});
+        hack_str! {r"
+            D=-1    //yes gt
+        "};
         self.emit_label_start(end.as_str());
-        self.emitln(indoc! {r"
-        A=D"});
+        emit_hack! {r"
+            A=D
+        "};
         self.a_to_stack();
         self.emitln("");
     }
 
     // tested
     pub fn neg(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1           // A = pointer to last item on stack
             D=M             // D = last item on stack
             D=-D            // negate value
-            M=D             // write result on stack"});
+            M=D             // write result on stack
+        "};
         self.emitln("");
     }
 
@@ -386,32 +407,35 @@ impl Emitter {
     pub fn or(&mut self) {
         // D = pop1
         self.stack_to_d();
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1       // pointer to last item on stack
-            M=M|D       // write result to stack"});
+            M=M|D       // write result to stack
+        "};
         self.emitln("");
     }
 
     // tested
     pub fn not(&mut self) {
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1       // A = pointer to last item on stack
             D=M         // D = value from stack
 
             D=!D        // calculate
-            M=D         // write result to stack"});
+            M=D         // write result to stack
+        "};
         self.emitln("");
     }
 
     pub fn and(&mut self) {
         // D = first item
         self.stack_to_d();
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M-1       // A = 2nd item from stack
-            M=M&D       // write result to stack, overwriting 2nd item"});
+            M=M&D       // write result to stack, overwriting 2nd item
+        "};
         self.emitln("");
     }
 
@@ -438,34 +462,37 @@ impl Emitter {
         // D = address of segment start
         match segment {
             Segment::Pointer => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=A         // D = segment start"});
+                emit_fmt_hack!{"@{}", segment_symbol};
+                emit_hack! {r"
+                    D=A         // D = segment start
+                "};
             }
             Segment::Temp => {
-                self.emitln(indoc! {r"
-                @5
-                D=A
-            "});
+                emit_hack! {r"
+                    @5
+                    D=A
+                "};
             }
             _ => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=M         // D = segment start"});
+                emit_fmt_hack!{"@{}", segment_symbol};
+                emit_hack! {r"
+                    D=M         // D = segment start
+                "};
             }
         }
 
         // A = segment offset
         self.assign_a(offset);
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             D=D+A      // D = pointer to destination in segment
             @SP
             A=M         // A = stack pointer
             M=D         // write segment destination to stack
             @SP
-            M=M+1       // increase stack pointer"});
+            M=M+1       // increase stack pointer
+        "};
 
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             M=M-1       // decrease stack pointer
             M=M-1       // decrease stack pointer
@@ -477,7 +504,8 @@ impl Emitter {
             A=M         // A = segment destination
             M=D         // write to the segment destination
             @SP
-            M=M-1       // Decrease stack pointer"});
+            M=M-1       // Decrease stack pointer
+        "};
 
         self.emitln("");
     }
@@ -489,32 +517,35 @@ impl Emitter {
         // D = address of segment start
         match segment {
             Segment::Pointer => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=A         // D = segment start"});
+                emit_fmt_hack!{"@{}", segment_symbol};
+                emit_hack! {r"
+                    D=A         // D = segment start
+                "};
             }
             Segment::Temp => {
-                self.emitln(indoc! {r"
-                @5
-                D=A
-            "});
+                emit_hack! {r"
+                    @5
+                    D=A
+                "};
             }
             _ => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=M         // D = segment start"});
+                emit_fmt_hack!{"@{}", segment_symbol};
+                emit_hack! {r"
+                    D=M         // D = segment start
+                "};
             }
         }
 
         // A = segment offset
         self.assign_a(offset);
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             A=A+D   // A = pointer to read from
             D=M     // D = value in segment
             @SP
             M=M+1   // increase stack pointer
             A=M-1   // A = value at top of stack
-            M=D     // write value to stack"});
+            M=D     // write value to stack
+        "};
         self.emitln("");
     }
 
@@ -579,22 +610,24 @@ impl Emitter {
 
     const USER_LABEL_PREFIX: &'static str = "user_";
     pub fn label(&mut self, symbol: &str) {
-        self.emitln(&format! {r"({}{})", Self::USER_LABEL_PREFIX, symbol});
+        emit_fmt_hack!{r"({}{})", Self::USER_LABEL_PREFIX, symbol};
     }
 
     // jump to the symbol if stack top > 0
     pub fn ifgoto(&mut self, symbol: &str) {
         self.stack_to_d();
-        self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
-        self.emitln(indoc! {r"
-        D;JNE"});
+        emit_fmt_hack! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol};
+        emit_hack! {r"
+            D;JNE
+        "};
         self.emitln("");
     }
 
     pub fn goto(&mut self, symbol: &str) {
-        self.emitln(&format! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol});
-        self.emitln(indoc! {r"
-        0;JMP"});
+        emit_fmt_hack! {r"@{}{}", Self::USER_LABEL_PREFIX, symbol};
+        emit_hack! {r"
+            0;JMP
+        "};
         self.emitln("");
     }
 
@@ -604,23 +637,23 @@ impl Emitter {
         self.emit_label_start(symbol);
 
         if n_vars > 0 {
-            self.emitln(indoc! {r"
-            @LCL
-            A=M
-            D=M
-            @R14
-            M=D
-        "});
+            emit_hack! {r"
+                @LCL
+                A=M
+                D=M
+                @R14
+                M=D
+            "};
 
             // zero the locals
             for _ in 0..n_vars {
-                self.emitln(indoc! {r"
-               @R14
-               M=0
+                emit_hack! {r"
+                    @R14
+                    M=0
 
-               @R14
-               M=M+1
-            "});
+                    @R14
+                    M=M+1
+                "};
             }
         }
     }
@@ -631,7 +664,8 @@ impl Emitter {
     pub fn _return(&mut self) {
         // move return value to args[0] of caller
         // &args[0] = return
-        self.emitln(indoc! {r"
+        emit_hack! {r"
+            // return
             // insert return value to arg[0] of caller
                 // load caller's argument segment ARG= *LCL-3
                 @LCL
@@ -718,7 +752,8 @@ impl Emitter {
             A=M
             A=M         // A = return address
             0;JMP       // jump to return address
-        "});
+        "};
+        self.emitln("");
     }
 
     fn segment_pointer_to_stack(&mut self, segment: Segment) {
@@ -728,55 +763,56 @@ impl Emitter {
         // D = address of segment start
         match segment {
             Segment::Pointer => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=A         // D = segment start"});
+                emit_fmt_hack!("@{}", segment_symbol);
+                emit_hack! {r"
+                    D=A         // D = segment start
+                "};
             }
             Segment::Temp => {panic!("temp has no segment pointer"); }
             _ => {
-                self.emitln(&format!("@{}", segment_symbol));
-                self.emitln(indoc! {r"
-                D=M         // D = segment start"});
+                emit_fmt_hack!("@{}", segment_symbol);
+                emit_hack! {r"
+                    D=M         // D = segment start
+                "};
             }
         }
 
         // A = segment offset
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             @SP
             A=M         // A = stack pointer
             M=D         // write segment pointer to stack
             @SP
-            M=M+1       // increase stack pointer"});
-
-        self.emitln("");
+            M=M+1       // increase stack pointer
+        "};
     }
 
     pub fn call(&mut self, n_args: i16, callee_symbol: &str) {
-        let caller_return = format!("{}$ret.{}", callee_symbol, self.func_emitter.call());
+        let caller_return = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
 
         // set Ram[13] to address of first argument
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             // save stack address of first argument
             @SP
             D=M
-        "});
+        "};
         self.assign_a(n_args);
-        self.emitln(indoc! {r"
+        emit_hack! {r"
             D=D-A
             @R13
             M=D
-        "});
+        "};
 
-        self.emitln(indoc! {r"// save a return address"});
-        self.emitln(&format!("@{}", caller_return.as_str()));
-        self.emitln(indoc! {r"
+        emit_hack! {r"// save a return address"};
+        emit_fmt_hack!("@{}", caller_return.as_str());
+        emit_hack! {r"
             D=A
             @SP
             A=M
             M=D
             @SP
             M=M+1
-            "});
+        "};
 
         // save caller stackframe
         self.segment_pointer_to_stack(Segment::Local);
@@ -785,7 +821,7 @@ impl Emitter {
         self.segment_pointer_to_stack(Segment::That);
 
 
-        self.emitln(indoc!{r"
+        emit_hack!{r"
             // setup segment pointers for callee
                 // ARG = address of first argument passed
                 @R13
@@ -801,15 +837,17 @@ impl Emitter {
                 M=D
             // jump
 
-        "});
+        "};
 
         // jump
-        self.emitln(&format!("@{}", callee_symbol));
-        self.emitln(indoc! {r"
+        emit_fmt_hack!("@{}", callee_symbol);
+        emit_hack! {r"
             0;JMP
-        "});
+        "};
 
         // declare callee return address
         self.emit_label_start(caller_return.as_str());
+
+        self.emitln("");
     }
 }
