@@ -6,6 +6,7 @@ use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::sync::Arc;
 use crate::transformer::Segment;
+use hack_macro::hack;
 
 struct SymbolGenerator {
     next_id: usize,
@@ -624,6 +625,8 @@ impl Emitter {
         }
     }
 
+
+
     // tested
     pub fn _return(&mut self) {
         // move return value to args[0] of caller
@@ -718,28 +721,51 @@ impl Emitter {
         "});
     }
 
+    fn segment_pointer_to_stack(&mut self, segment: Segment) {
+        // let not_temp_segment;
+        let segment_symbol = self.segment_symbol_str(segment, -1);
+
+        // D = address of segment start
+        match segment {
+            Segment::Pointer => {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=A         // D = segment start"});
+            }
+            Segment::Temp => {panic!("temp has no segment pointer"); }
+            _ => {
+                self.emitln(&format!("@{}", segment_symbol));
+                self.emitln(indoc! {r"
+                D=M         // D = segment start"});
+            }
+        }
+
+        // A = segment offset
+        self.emitln(indoc! {r"
+            @SP
+            A=M         // A = stack pointer
+            M=D         // write segment pointer to stack
+            @SP
+            M=M+1       // increase stack pointer"});
+
+        self.emitln("");
+    }
+
     pub fn call(&mut self, n_args: i16, callee_symbol: &str) {
         let caller_return = format!("{}$ret.{}", callee_symbol, self.func_emitter.call());
 
+        // set Ram[13] to address of first argument
         self.emitln(indoc! {r"
-            // save pos of arguments on stack
+            // save stack address of first argument
             @SP
             D=M
+        "});
+        self.assign_a(n_args);
+        self.emitln(indoc! {r"
+            D=D-A
             @R13
             M=D
         "});
-
-        for i in 0..n_args {
-            self.emitln(format!("// pass argument {}", i).as_str());
-            self.stack_to_d();
-            self.emitln(indoc! {r"
-                @SP
-                A=M
-                M=D
-                @SP
-                M=M+1
-            "});
-        }
 
         self.emitln(indoc! {r"// save a return address"});
         self.emitln(&format!("@{}", caller_return.as_str()));
@@ -750,48 +776,16 @@ impl Emitter {
             M=D
             @SP
             M=M+1
+            "});
 
-            // save caller stackframe
-                // locals
-                @LCL
-                // A=M
-                D=M
-                @SP
-                A=M
-                M=D
-                @SP
-                M=M+1
+        // save caller stackframe
+        self.segment_pointer_to_stack(Segment::Local);
+        self.segment_pointer_to_stack(Segment::Argument);
+        self.segment_pointer_to_stack(Segment::This);
+        self.segment_pointer_to_stack(Segment::That);
 
-                // arg
-                @ARG
-                // A=M
-                D=M
-                @SP
-                A=M
-                M=D
-                @SP
-                M=M+1
 
-                // this
-                @THIS
-                // A=M
-                D=M
-                @SP
-                A=M
-                M=D
-                @SP
-                M=M+1
-
-                // that
-                @THAT
-                // A=M
-                D=M
-                @SP
-                A=M
-                M=D
-                @SP
-                M=M+1
-
+        self.emitln(indoc!{r"
             // setup segment pointers for callee
                 // ARG = address of first argument passed
                 @R13
