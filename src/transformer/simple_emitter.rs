@@ -777,26 +777,41 @@ impl SimpleEmitter {
         // inject label. Todo: make it comply with mangling rules
         self.emit_label_start(symbol);
 
-        if n_vars > 0 {
-            emit_hack! {r"
-                @LCL
-                A=M
-                D=M
-                @R14
-                M=D
-            "};
 
-            // zero the locals
-            for _ in 0..n_vars {
-                emit_hack! {r"
-                    @R14
-                    M=0
-
-                    @R14
-                    M=M+1
-                "};
-            }
+        // create room for locals and zero them
+        for _ in 0..n_vars {
+            emit_fmt_hack!(r"
+                @SP
+                A=M     // get address to top of stack
+                M=0     // zero stack
+                @SP
+                M=M+1   // increase stack pointer
+            ");
         }
+
+        // if n_vars > 0 {
+        //     emit_fmt_hack!(r"
+        //     ");
+        //     // zero the argument
+        //     emit_hack! {r"
+        //         @LCL
+        //         A=M
+        //         D=M
+        //         @R14
+        //         M=D
+        //     "};
+        //
+        //     // zero the locals
+        //     for _ in 0..n_vars {
+        //         emit_hack! {r"
+        //             @R14
+        //             M=0
+        //
+        //             @R14
+        //             M=M+1
+        //         "};
+        //     }
+        // }
     }
 
 
@@ -811,11 +826,9 @@ impl SimpleEmitter {
                 // load caller's argument segment ARG= *LCL-3
                 @LCL
                 A=M     // A = address of first local
-                A=M
                 A=A-1
                 A=A-1
                 A=A-1   // A = address of caller's ARG
-                A=M
                 D=M     // A = caller's ARG
                 @ARG
                 A=M
@@ -833,7 +846,7 @@ impl SimpleEmitter {
 
             // discard stack
             @ARG
-            D=M+1           // end of caller's stackframe
+            D=M           // end of caller's stackframe
             @SP
             M=D             // set stack pointer to just underneath previous function stackframe
 
@@ -929,66 +942,145 @@ impl SimpleEmitter {
     }
 
     pub fn call(&mut self, n_args: i16, callee_symbol: &str) {
-        let caller_return = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
+        let ret_label = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
 
-        // set Ram[13] to address of first argument
-        emit_hack! {r"
-            // save stack address of first argument
-            @SP
-            D=M
-        "};
-        self.assign_a(n_args);
-        emit_hack! {r"
-            D=D-A
+        // stow caller's ARG
+        emit_fmt_hack!(r"
+            @ARG
+            D=M     // A = load ARG value of caller
             @R13
-            M=D
-        "};
+            M=D     // Ram[13] = ARG value of caller
+        ");
 
-        emit_hack! {r"// save a return address"};
-        emit_fmt_hack!("@{}", caller_return.as_str());
-        emit_hack! {r"
+        // set ARG to address of first argument
+        emit_fmt_hack!(r"
+            @{n_args}
+            D=A
+            @SP
+            D=M-D   // D = stack pointer value - n_args
+            @ARG
+            M=D     // ARG is set to point to first argument on stack
+        ");
+
+
+        // push return address on stack
+        emit_fmt_hack!(r"
+            @{ret_label}
             D=A
             @SP
             A=M
-            M=D
+            M=D     // write return address on stack
+            @SP
+            M=M+1   // increase stack pointer
+        ");
+
+        // save LCL, ARG, THIS, THAT
+        emit_fmt_hack!(r"
+            @LCL
+            D=M
+            @SP
+            A=M
+            M=D     // write LCL value to stack
+            @SP
+            M=M+1   // increase stack pointer
+
+            @R13    // retrieve stowed value of ARG
+            D=M
+            @SP
+            A=M
+            M=D     // write Arg value to stack
+            @SP
+            M=M+1   // increase stack pointer
+
+            @THIS
+            D=M
+            @SP
+            A=M
+            M=D     // write THIS value to stack
+            @SP
+            M=M+1   // increase stack pointer
+
+            @THAT
+            D=M
+            @SP
+            A=M
+            M=D     // write THAT value to stack
             @SP
             M=M+1
-        "};
+        ");
 
-        // save caller stackframe
-        self.segment_pointer_to_stack(Segment::Local);
-        self.segment_pointer_to_stack(Segment::Argument);
-        self.segment_pointer_to_stack(Segment::This);
-        self.segment_pointer_to_stack(Segment::That);
-
-
-        emit_hack!{r"
-            // setup segment pointers for callee
-                // ARG = address of first argument passed
-                @R13
-                D=M
-                @ARG
-                M=D
-
-                // LCL = start of caller's stackframe
-                @SP
-                D=M
-                @LCL
-                A=M
-                M=D
-            // jump
-
-        "};
-
-        // jump
-        emit_fmt_hack!("@{}", callee_symbol);
-        emit_hack! {r"
+        // jump to symbol
+        emit_fmt_hack!(r"
+            @{callee_symbol}
             0;JMP
-        "};
+        ");
 
-        // declare callee return address
-        self.emit_label_start(caller_return.as_str());
+        // declare return label
+        emit_fmt_hack!(r"
+            ({ret_label})
+        ");
 
-        self.emitln("");
+
+        // let caller_return = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
+        //
+        // // set Ram[13] to address of first argument
+        // emit_hack! {r"
+        //     // save stack address of first argument
+        //     @SP
+        //     D=M
+        // "};
+        // self.assign_a(n_args);
+        // emit_hack! {r"
+        //     D=D-A
+        //     @R13
+        //     M=D
+        // "};
+        //
+        // emit_hack! {r"// save a return address"};
+        // emit_fmt_hack!("@{}", caller_return.as_str());
+        // emit_hack! {r"
+        //     D=A
+        //     @SP
+        //     A=M
+        //     M=D
+        //     @SP
+        //     M=M+1
+        // "};
+        //
+        // // save caller stackframe
+        // self.segment_pointer_to_stack(Segment::Local);
+        // self.segment_pointer_to_stack(Segment::Argument);
+        // self.segment_pointer_to_stack(Segment::This);
+        // self.segment_pointer_to_stack(Segment::That);
+        //
+        //
+        // emit_hack!{r"
+        //     // setup segment pointers for callee
+        //         // ARG = address of first argument passed
+        //         @R13
+        //         D=M
+        //         @ARG
+        //         M=D
+        //
+        //         // LCL = start of caller's stackframe
+        //         @SP
+        //         D=M
+        //         @LCL
+        //         A=M
+        //         M=D
+        //     // jump
+        //
+        // "};
+        //
+        // // jump
+        // emit_fmt_hack!("@{}", callee_symbol);
+        // emit_hack! {r"
+        //     0;JMP
+        // "};
+        //
+        // // declare callee return address
+        // self.emit_label_start(caller_return.as_str());
+        //
+        // self.emitln("");
     }
 }

@@ -31,10 +31,10 @@ impl std::fmt::Display for TransformError {
 }
 
 /// A type the emits hack instructions
-type Emitter = super::compact_emitter::CompactEmitter;
+type Emitter = super::simple_emitter::SimpleEmitter;
 
 /// A type that encapsulates emitter state
-type EmitterContext = super::compact_emitter::CEmitterContext;
+type EmitterContext = super::simple_emitter::SContext;
 
 pub fn transform_file(
     writer_context: WriterContext<EmitterContext>,
