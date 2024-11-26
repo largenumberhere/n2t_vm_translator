@@ -7,6 +7,9 @@ use super::parser::Parser;
 use super::writer::{CodeWriter, WriterContext};
 use super::{parser, transform as transformer, writer};
 use std::sync::Arc;
+use crate::transformer::compact_emitter::{CompactEmitter, CEmitterContext};
+use crate::transformer::emit::{EContext, EmitAsm};
+use crate::transformer::simple_emitter::SimpleEmitter;
 
 pub type TransformResult<T> = Result<T, TransformError>;
 
@@ -27,13 +30,20 @@ impl std::fmt::Display for TransformError {
     }
 }
 
+/// A type the emits hack instructions
+type Emitter = super::compact_emitter::CompactEmitter;
+
+/// A type that encapsulates emitter state
+type EmitterContext = super::compact_emitter::CEmitterContext;
+
 pub fn transform_file(
-    writer_context: WriterContext,
+    writer_context: WriterContext<EmitterContext>,
     in_file_path: &Path,
     out_steam: Arc<File>,
     errored: &mut bool,
     emit_init: bool,
-) -> WriterContext {
+) -> WriterContext<EmitterContext>
+{
     let out_path = crate::assume_output_path(&in_file_path);
 
     let file_in = std::fs::File::open(&in_file_path).expect("Failed to open input file");
@@ -44,7 +54,7 @@ pub fn transform_file(
         out_path.display()
     );
 
-    let result = transform(
+    let result = transform::<_,Emitter>(
         writer_context.clone(),
         file_in,
         out_steam.clone(),
@@ -66,10 +76,11 @@ pub fn transform_file(
 pub fn visit_dir_entry(
     dir: DirEntry,
     out_stream: Arc<File>,
-    writer_context: WriterContext,
+    writer_context: WriterContext<EmitterContext>,
     translate_error: &mut bool,
     inject_init: bool,
-) -> WriterContext {
+) -> WriterContext<EmitterContext>
+{
     let mut context = writer_context;
 
     // recursively visit all subdirectories
@@ -105,8 +116,9 @@ pub fn traverse_directories(
     translate_error: &mut bool,
     out_stream: Arc<File>,
     emit_init: bool,
-    writer_context: WriterContext,
-) {
+    writer_context: WriterContext<EmitterContext>,
+)
+{
     let mut context = writer_context;
     // let out_path = assume_output_path(path);
     for entry in std::fs::read_dir(path).unwrap() {
@@ -119,14 +131,17 @@ pub fn traverse_directories(
         );
     }
 }
-fn transform<R: Read>(
-    writer_context: WriterContext,
+fn transform<R: Read, E>
+(
+    writer_context: WriterContext<EmitterContext>,
     in_stream: R,
     out_stream: Arc<File>,
     emit_init: bool,
-) -> Result<WriterContext, TransformError> {
+) -> Result<WriterContext<EmitterContext>, TransformError>
+        where E: EmitAsm<EmitterContext>
+{
     let mut reader: Parser = parser::Parser::new(in_stream);
-    let mut writer: CodeWriter =
+    let mut writer: CodeWriter<EmitterContext, Emitter> =
         writer::CodeWriter::with_context(writer_context, out_stream, emit_init);
 
     while let Some(val) = reader.next_command() {

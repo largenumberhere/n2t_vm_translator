@@ -1,66 +1,95 @@
-use super::emit_asm::{Emitter, EmitterContext};
+use super::simple_emitter::{SimpleEmitter, SContext};
 use super::parser::{ArithmeticType, Segment};
 use std::fs::File;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use super::parser::CommandDetails;
+use super::emit::{EContext, EmitAsm};
 
-pub struct CodeWriter {
-    emit: Emitter,
+pub struct CodeWriter<C, E>
+    where C: EContext,
+    E: EmitAsm<C>
+{
+    emit: E,
     first_run: bool,
     emit_init: bool,
+    _phantom: PhantomData<C>
 }
 
 #[derive(Clone)]
-pub struct WriterContext {
-    emitter_sate: EmitterContext,
+pub struct WriterContext<C>
+    where
+        C: EContext,
+{
+    emitter_sate: C,
 }
 
-impl Default for WriterContext {
+impl<C> Default for WriterContext<C>
+    where
+        C: EContext,
+{
     fn default() -> Self {
         Self {
-            emitter_sate: EmitterContext::default(),
+            emitter_sate: C::default(),
         }
     }
 }
-impl CodeWriter {
+impl<C, E> CodeWriter<C, E>
+    where C: EContext,
+    E: EmitAsm<C>
+{
+
     pub fn with_context(
-        writer_context: WriterContext,
+        writer_context: WriterContext<C>,
         output_stream: Arc<File>,
         emit_init: bool,
     ) -> Self {
-        let writer = Emitter::with_context(writer_context.emitter_sate, output_stream);
+        let writer  = E::with_context(writer_context.emitter_sate, output_stream);
 
         CodeWriter {
             emit: writer,
             first_run: true,
             emit_init,
+            _phantom: PhantomData::default()
         }
     }
 
     // constructor
 
-    pub fn new(output_stream: Arc<File>, emit_init: bool) -> CodeWriter {
-        let writer = Emitter::new(output_stream);
+    pub fn new(output_stream: Arc<File>, emit_init: bool) -> CodeWriter<C, E> {
+        let writer = E::new(output_stream);
 
         CodeWriter {
             emit: writer,
             first_run: true,
             emit_init,
+            _phantom: PhantomData::default()
         }
     }
 
-    pub fn close(self) -> WriterContext {
+    pub fn close(self) -> WriterContext<C> {
         WriterContext {
             emitter_sate: self.emit.close(),
         }
     }
 
     pub fn write_command(&mut self, command: &CommandDetails, source: &String) {
-        if self.first_run && self.emit_init {
-            self.emit.emit_init();
+        if self.first_run {
+
+            if self.emit_init {
+                self.emit.emit_init();
+            }
+
+            self.emit.prelude();
+
             self.first_run = false;
         }
+
+        // if self.first_run && self.emit_init {
+        //     self.emit.emit_init();
+        //     self.first_run = false;
+        // }
 
         self.emit
             .comment(format_args!("//{}\n", source))
@@ -97,7 +126,7 @@ impl CodeWriter {
             CommandDetails::Arithmetic(ArithmeticType::Or) => self.emit.or(),
             CommandDetails::Arithmetic(ArithmeticType::Not) => self.emit.not(),
 
-            CommandDetails::Label(symbol) => self.emit.label(symbol.as_str()),
+            CommandDetails::Label(symbol) => self.emit.label(symbol),
             CommandDetails::Goto(symbol) => self.emit.goto(symbol.as_str()),
             CommandDetails::IfGoto(symbol) => self.emit.ifgoto(symbol.as_str()),
             CommandDetails::Function { n_vars, symbol } => {

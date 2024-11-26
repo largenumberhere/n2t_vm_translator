@@ -1,11 +1,14 @@
+//! An hack assembly emitter that prioritizes small assembly size
+
 use std::fs::File;
 use std::io::BufWriter;
 
-use std::fmt::Write as FmtWrite;
+use std::fmt::{Arguments, Write as FmtWrite};
 use std::io::Write as IoWrite;
 use std::sync::Arc;
 use crate::transformer::Segment;
 use hack_macro::{emit_fmt_hack, emit_hack, fmt_hack, hack_str};
+use crate::transformer::emit::{EContext, EmitAsm};
 
 struct SymbolGenerator {
     next_id: usize,
@@ -57,20 +60,168 @@ impl FuncEmitter {
     }
 }
 
-pub struct Emitter {
+pub struct CompactEmitter {
     writer: BufWriter<Arc<File>>,
     symbol_generator: SymbolGenerator,
     emitted_instructions_count: usize,
     func_emitter: FuncEmitter
 }
 
+
+
+impl EmitAsm<CEmitterContext> for CompactEmitter {
+    fn with_context(context: CEmitterContext, stream: Arc<File>) -> Self {
+        Self::with_context(context, stream)
+    }
+
+    fn new(stream: Arc<File>) -> Self {
+        Self::new(stream)
+    }
+
+    fn close(self) -> CEmitterContext {
+        self.close()
+    }
+
+    fn emit_init(&mut self) {
+        self.emit_init();
+    }
+
+    fn prelude(&mut self) {
+        self.prelude();
+    }
+
+    fn comment(&mut self, args: Arguments) -> std::io::Result<()> {
+        self.comment(args)
+    }
+
+    fn push_const(&mut self, val: i16) {
+        self.push_const(val)
+    }
+
+    fn push_local_n(&mut self, offset: i16) {
+        self.push_local_n(offset)
+    }
+
+    fn push_arg_n(&mut self, offset: i16) {
+        self.push_arg_n(offset)
+    }
+
+    fn push_temp_n(&mut self, offset: i16) {
+        self.push_temp_n(offset)
+    }
+
+    fn push_static_n(&mut self, offset: i16) {
+        self.push_static_n(offset)
+    }
+
+    fn push_ptr_n(&mut self, offset: i16) {
+        self.push_ptr_n(offset)
+    }
+
+    fn pop_local_n(&mut self, offset: i16) {
+        self.pop_local_n(offset)
+    }
+
+    fn pop_argument_n(&mut self, offset: i16) {
+        self.pop_argument_n(offset)
+    }
+
+    fn pop_temp_n(&mut self, offset: i16) {
+        self.pop_temp_n(offset)
+    }
+
+    fn pop_static_n(&mut self, offset: i16) {
+        self.pop_static_n(offset)
+    }
+
+    fn pop_that_n(&mut self, offset: i16) {
+        self.pop_that_n(offset)
+    }
+
+    fn pop_this_n(&mut self, offset: i16) {
+        self.pop_this_n(offset)
+    }
+
+    fn call(&mut self, n_args: i16, symbol: &str) {
+        self.call(n_args, symbol)
+    }
+
+    fn _return(&mut self) {
+        self._return()
+    }
+
+    fn function(&mut self, n_vars: i16, symbol: &str) {
+        self.function(n_vars, symbol)
+    }
+
+    fn goto(&mut self, symbol: &str) {
+        self.goto(symbol)
+    }
+
+    fn or(&mut self) {
+        self.or()
+    }
+
+    fn lt(&mut self) {
+        self.lt()
+    }
+
+    fn gt(&mut self) {
+        self.gt()
+    }
+
+    fn sub(&mut self) {
+        self.sub()
+    }
+
+    fn neg(&mut self) {
+        self.neg()
+    }
+
+    fn push_this_n(&mut self, offset: i16) {
+        self.push_this_n(offset)
+    }
+
+    fn push_that_n(&mut self, offset: i16) {
+        self.push_that_n(offset)
+    }
+
+    fn pop_ptr_n(&mut self, offset: i16) {
+        self.pop_ptr_n(offset)
+    }
+
+    fn add(&mut self) {
+        self.add()
+    }
+
+    fn eq(&mut self) {
+        self.eq()
+    }
+
+    fn and(&mut self) {
+        self.and()
+    }
+
+    fn label(&mut self, symbol: &str) {
+        self.label(symbol)
+    }
+
+    fn ifgoto(&mut self, symbol: &str) {
+        self.ifgoto(symbol)
+    }
+
+    fn not(&mut self) {
+        self.not()
+    }
+}
+
 #[derive(Clone)]
-pub struct EmitterContext {
+pub struct CEmitterContext {
     emitted_instructions_count: usize,
     func_emitter: FuncEmitter
 }
 
-impl Default for EmitterContext {
+impl Default for CEmitterContext {
     fn default() -> Self {
         Self {
             emitted_instructions_count: 0,
@@ -79,19 +230,20 @@ impl Default for EmitterContext {
     }
 }
 
+impl EContext for CEmitterContext {}
 const LOGIC_TRUE: i16 = -1;
 const LOGIC_FALSE: i16 = 0;
 
-impl Emitter {
-    pub fn close(self) -> EmitterContext {
-        return EmitterContext {
+impl CompactEmitter {
+    pub fn close(self) -> CEmitterContext {
+        return CEmitterContext {
             emitted_instructions_count: self.emitted_instructions_count,
             func_emitter: self.func_emitter,
         };
     }
 
-    pub fn new(stream: Arc<File>) -> Emitter {
-        Emitter {
+    pub fn new(stream: Arc<File>) -> Self {
+        Self {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
             emitted_instructions_count: 0,
@@ -99,8 +251,8 @@ impl Emitter {
         }
     }
 
-    pub fn with_context(emitter_context: EmitterContext, stream: Arc<File>) -> Self {
-        Emitter {
+    pub fn with_context(emitter_context: CEmitterContext, stream: Arc<File>) -> Self {
+        Self {
             writer: BufWriter::new(stream),
             symbol_generator: SymbolGenerator::new(),
             emitted_instructions_count: emitter_context.emitted_instructions_count,
@@ -115,6 +267,33 @@ impl Emitter {
         self.writer.write_fmt(args)
     }
 
+    pub fn prelude(&mut self) {
+        let end = self.symbol_generator.next_commented("end_prelude");
+        // skip the following in the case that init is not enabled
+        emit_fmt_hack!(r"
+            @{end}
+            0;JMP
+        ");
+
+        self.emit_label_start("neg_proc");
+        emit_fmt_hack!(r"
+            // expects a return address passed in D
+            @R15
+            M=D     // stow return addres
+            @SP
+            A=M-1
+            D=M     // D = value of item in stack
+            D=-D    // negate D
+            M=D     // write D back to stack
+
+            @R15
+            A=M
+            0;JMP   // return
+        ");
+
+        self.emit_label_start(end.as_str());
+    }
+
     pub fn emit_init(&mut self) {
         emit_hack! {r"
             @Sys.init
@@ -124,8 +303,10 @@ impl Emitter {
             @_L_DEADLOOP
             (_L_DEADLOOP)
             0;JMP
+
         "};
         self.emitln("");
+
         // // initalize segments
         // // 1. clear the memory if needed
         //
@@ -382,14 +563,22 @@ impl Emitter {
 
     // tested
     pub fn neg(&mut self) {
-        emit_hack! {r"
-            @SP
-            A=M-1           // A = pointer to last item on stack
-            D=M             // D = last item on stack
-            D=-D            // negate value
-            M=D             // write result on stack
-        "};
-        self.emitln("");
+        let return_label = self.symbol_generator.next_commented("neg_ret");
+        emit_fmt_hack!(r"
+            @{return_label}
+            D=A
+            @neg_proc
+            0;JMP
+        ");
+        self.emit_label_start(return_label.as_str());
+        // emit_hack! {r"
+        //     @SP
+        //     A=M-1           // A = pointer to last item on stack
+        //     D=M             // D = last item on stack
+        //     D=-D            // negate value
+        //     M=D             // write result on stack
+        // "};
+        // self.emitln("");
     }
 
     // tested
