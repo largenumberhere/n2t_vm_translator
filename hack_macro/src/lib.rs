@@ -62,6 +62,11 @@ fn trim_hack_str(input: LitStr) -> LitStr {
     literal
 }
 
+/// Strip a multiline  &str
+/// - Takes a raw multiline string.
+/// - In each line it removes leading and trailing whitespace
+/// - does not append a newline at the end
+/// - Inserts the stripped &str
 #[proc_macro]
 pub fn hack_str(input: TokenStream1) -> TokenStream1 {
     let input = parse_macro_input!(input as LitStr);
@@ -76,18 +81,18 @@ pub fn hack_str(input: TokenStream1) -> TokenStream1 {
 }
 
 struct HackFmt {
-    lit_str: LitStr,
-    rest: TokenStream2,
+    string_literal: LitStr,
+    rest_of_tokens: TokenStream2,
 }
 
 impl Parse for HackFmt {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let lit_str = input.parse::<LitStr>()?;
-        let rest = input.parse::<TokenStream2>()?;
+        let string_literal = input.parse::<LitStr>()?;
+        let rest_of_tokens = input.parse::<TokenStream2>()?;
 
         Ok(HackFmt {
-            lit_str,
-            rest,
+            string_literal,
+            rest_of_tokens,
         })
     }
 }
@@ -96,8 +101,8 @@ impl Parse for HackFmt {
 fn construct_hack_fmt(input: TokenStream1) -> TokenStream2 {
     let input = syn::parse::<HackFmt>(input)
         .expect("failed to parse hack format args");
-    let fmt = input.lit_str;
-    let rest = input.rest;
+    let fmt = input.string_literal;
+    let rest = input.rest_of_tokens;
 
     let fmt = trim_hack_str(fmt);
 
@@ -108,6 +113,10 @@ fn construct_hack_fmt(input: TokenStream1) -> TokenStream2 {
     stream.into()
 }
 
+/// like format!, except the first argument is stripped of whitespace
+/// - In each line it removes leading and trailing whitespace
+/// - does not append a newline at the end
+/// - calls to format with the &str and any other args passed
 #[proc_macro]
 pub fn fmt_hack(input: TokenStream1) -> TokenStream1 {
     let stream = construct_hack_fmt(input);
@@ -117,6 +126,11 @@ pub fn fmt_hack(input: TokenStream1) -> TokenStream1 {
     return stream.into();
 }
 
+/// Similar to format!, except the result is passed to self.emitln(&str)
+/// - In each line it removes leading and trailing whitespace
+/// - does not append a newline at the end
+/// - calls to format! with the &str and any other args passed
+/// - passes the result to `self.emitln` function
 #[proc_macro]
 pub fn emit_fmt_hack(input: TokenStream1) -> TokenStream1 {
     let stream = construct_hack_fmt(input);
