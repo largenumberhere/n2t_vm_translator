@@ -42,12 +42,9 @@ fn main() {
     }
 }
 
-// replace the file extension in a path with .asm
+// replace/append file extension with .asm in a path
 fn assume_output_path(input_path: &Path) -> PathBuf {
-    // let path = Path::fro(input_path);
     let mut path = PathBuf::from(input_path);
-    // let ext = path.extension().unwrap_or_default().to_str().unwrap();
-    // let rest = path.to_str().unwrap();
 
     if path.is_dir() {
         // replace folder/file.vm with folder/folder.asm

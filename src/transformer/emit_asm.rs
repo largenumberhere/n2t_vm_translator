@@ -1,4 +1,3 @@
-use indoc::indoc;
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -79,6 +78,9 @@ impl Default for EmitterContext {
         }
     }
 }
+
+const LOGIC_TRUE: i16 = -1;
+const LOGIC_FALSE: i16 = 0;
 
 impl Emitter {
     pub fn close(self) -> EmitterContext {
@@ -199,6 +201,15 @@ impl Emitter {
         "};
     }
 
+    fn d_to_stack(&mut self) {
+        emit_hack! {r"
+            @SP
+            M=M+1       // increase stack pointer
+            A=M-1       // get top of stack
+            M=D         // top of stack = D
+        "};
+    }
+
     fn emit_push_local_a(&mut self) {
         emit_hack! {r"
             // emit_push_a
@@ -225,14 +236,25 @@ impl Emitter {
 
     // tested
     pub fn push_const(&mut self, val: i16) {
-        self.assign_a(val);
-        emit_hack! {r"
+        // self.assign_a(val);
+        // emit_hack! {r"
+        //     D=A
+        //     @SP
+        //     M=M+1       // increase stack pointer
+        //     A=M-1       // get stack address to write to
+        //     M=D         // stack top = D
+        // "};
+        // self.emitln("");
+
+        emit_fmt_hack!(r"
+            @{val}
             D=A
             @SP
-            M=M+1       // increase stack pointer
-            A=M-1       // get stack address to write to
-            M=D         // stack top = D
-        "};
+            A=M
+            M=D
+            @SP
+            M=M+1
+        ");
         self.emitln("");
     }
 
@@ -253,46 +275,34 @@ impl Emitter {
         self.emitln("");
     }
 
-    // tested
+
+
+    // seems to check out
     pub fn eq(&mut self) {
-        // todo!("needs reviewing");
-        let is_eq = self.symbol_generator.next_commented("is_eq");
+        let is_equal = self.symbol_generator.next_commented("is_eq");
+        let not_equal = self.symbol_generator.next_commented("not_equal");
         let end = self.symbol_generator.next_commented("end");
-        // D = pop1
         self.stack_to_d();
-        emit_hack! {r"
+        emit_fmt_hack!{r"
+            // D = value from stack
             @SP
-            M=M-1       // decrease stack pointer
+            A=M-1       // A = address of top item in stack
+            A=M         // A = top value from stack
+            D=D-A       // D = difference of values from stack
+            @{is_equal}
+            D;JEQ       // if pop1 == pop2, goto is_equal, else goto not_equal
+
+            ({not_equal})
+                D={LOGIC_FALSE}
+                @{end}      // goto end
+                0;JMP
+            ({is_equal})
+                D={LOGIC_TRUE}
+            ({end})
             @SP
-            A=M
-            A=M         // A = pop2
-            D=A-D       // D = pop2 - pop1
+            A=M-1       // grab pointer to top item in stack
+            M=D         // write to stack
         "};
-
-        emit_fmt_hack!("@{}", is_eq);
-        emit_hack! {r"
-            D;JEQ       // jump to is_eq if pop1 == pop2, else fallthrough
-            D=0         // D = 0 designating false"
-        };
-        emit_fmt_hack!("@{}", end);
-        emit_hack! {
-            r"
-            0;JMP       // jump to end"
-        };
-
-        self.emit_label_start(is_eq.as_str());
-        emit_hack! {
-            r"
-            D=-1         // D = 1 designating true"
-        };
-        self.emit_label_start(end.as_str());
-        emit_hack! {r"
-            @SP
-            M=M+1       // increase stack pointer
-            A=M-1       // get pointer to top of stack
-            M=D         // write result on stack
-        "};
-
         self.emitln("");
     }
 
@@ -316,78 +326,57 @@ impl Emitter {
     pub fn lt(&mut self) {
         let is_lt = self.symbol_generator.next_commented("is_lt");
         let is_not_lt = self.symbol_generator.next_commented("is_not_lt");
-        let lt_end = self.symbol_generator.next_commented("lt_end");
+        let end = self.symbol_generator.next_commented("end");
 
-        // D = pop1
         self.stack_to_d();
-        emit_hack! {r"
+        emit_fmt_hack!(r"
+            // D = value from stack
             @SP
-            A=M-1       // A = address of top item on stack
-            A=M         // A = pop2
-            D=A-D       // D = pop2 - pop1
-        "};
-
-        self.assign_a_str(&is_lt);
-        emit_hack! {r"
-            D;JLT       // if pop1  < pop2 then goto is_lt, else fallthrough
-        "};
-        self.emit_label_start(is_not_lt.as_str());
-        emit_hack! {r"
-            D=0
-        "};
-        self.assign_a_str(&lt_end);
-        emit_hack! {r"
+            A=M-1   // address of top item in stack
+            A=M     // value from top of stack
+            D=A-D   // D = stack[0] - stack[1]
+            @{is_lt}
+            D;JLT   // if true, goto is_lt, else goto is_not_lt
+            ({is_not_lt})
+                D={LOGIC_FALSE}
+            @{end}
             0;JMP
-        "};
-
-        self.emit_label_start(is_lt.as_str());
-        emit_hack! {r"
-            D=-1
-        "};
-
-        self.emit_label_start(lt_end.as_str());
-        emit_hack! {r"
+            ({is_lt})
+                D={LOGIC_TRUE}
+            ({end})
             @SP
-            A=M-1
-            M=D         // write value to top of stack
-        "};
+            A=M-1   // address of top item in stack
+            M=D      // write value to stack
+        ");
 
         self.emitln("");
     }
 
     // tested
     pub fn gt(&mut self) {
-        let end = self.symbol_generator.next_commented("gt_end");
         let is_gt = self.symbol_generator.next_commented("is_gt");
-
-        // D = pop1
+        let is_not_gt = self.symbol_generator.next_commented("is_not_gt");
+        let end = self.symbol_generator.next_commented("end");
         self.stack_to_d();
-        emit_hack! {r"
+        emit_fmt_hack!(r"
+            // D = item from stack
             @SP
-            M=M-1       // decrease stack pointer
-            A=M         // A = address of stack top
-            D=M-D       // pop2 - pop1
-        "};
-        self.assign_a_str(&is_gt);
-        emit_hack!{r"
-            D;JGT   // if pop2 > pop1 then goto is_gt, else
-            D=0     // not gt
-        "};
-        self.assign_a_str(&end);
-        emit_hack!(
-            r"
-            0;JMP"
-        );
-        self.emitln("");
-        self.emit_label_start(is_gt.as_str());
-        hack_str! {r"
-            D=-1    //yes gt
-        "};
-        self.emit_label_start(end.as_str());
-        emit_hack! {r"
-            A=D
-        "};
-        self.a_to_stack();
+            A=M-1   // address of top item in stack
+            A=M     // D = 2nd item from stack
+            D=D-A   // D = stack[0] - stack[1]
+            @{is_gt}
+            D;JLT   // if true, goto is_gt, else goto is_not_gt
+            ({is_not_gt})
+                D={LOGIC_FALSE}
+                @{end}
+                0;JMP
+            ({is_gt})
+                D={LOGIC_TRUE}
+            ({end})
+            @SP
+            A=M-1   // address of top item in stack
+            M=D     // write result to top of stack
+        ");
         self.emitln("");
     }
 
