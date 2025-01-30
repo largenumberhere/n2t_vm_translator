@@ -266,15 +266,15 @@ impl SimpleEmitter {
     }
 
     pub fn emit_init(&mut self) {
+        // self.call(0, "Sys.init");
         emit_hack! {r"
+            @256
+            D=A
+            @SP
+            M=D         // set stack pointer to 256
+
             @Sys.init
             0;JMP
-
-            // end of program - halt
-            @_L_DEADLOOP
-            (_L_DEADLOOP)
-            0;JMP
-
         "};
         self.emitln("");
 
@@ -772,13 +772,23 @@ impl SimpleEmitter {
         self.emitln("");
     }
 
+
+
     // a function declaration
     pub fn function(&mut self, n_vars: i16, symbol: &str) {
         // inject label. Todo: make it comply with mangling rules
         self.emit_label_start(symbol);
 
+        // set LCL
+        emit_fmt_hack!(r"
+            @SP
+            D=M     // A = address above stack top
+            @LCL
+            M=D     // set LCL to address of top of current stack
 
-        // create room for locals and zero them
+        ");
+
+        // create room for locals on stack and zero them
         for _ in 0..n_vars {
             emit_fmt_hack!(r"
                 @SP
@@ -788,127 +798,191 @@ impl SimpleEmitter {
                 M=M+1   // increase stack pointer
             ");
         }
-
-        // if n_vars > 0 {
-        //     emit_fmt_hack!(r"
-        //     ");
-        //     // zero the argument
-        //     emit_hack! {r"
-        //         @LCL
-        //         A=M
-        //         D=M
-        //         @R14
-        //         M=D
-        //     "};
-        //
-        //     // zero the locals
-        //     for _ in 0..n_vars {
-        //         emit_hack! {r"
-        //             @R14
-        //             M=0
-        //
-        //             @R14
-        //             M=M+1
-        //         "};
-        //     }
-        // }
     }
 
 
 
-    // tested
+    // passes SimpleFunction test
     pub fn _return(&mut self) {
-        // move return value to args[0] of caller
-        // &args[0] = return
-        emit_hack! {r"
-            // return
-            // insert return value to arg[0] of caller
-                // load caller's argument segment ARG= *LCL-3
-                @LCL
-                A=M     // A = address of first local
-                A=A-1
-                A=A-1
-                A=A-1   // A = address of caller's ARG
-                D=M     // A = caller's ARG
-                @ARG
-                A=M
-                M=D     // write segment value
-
-                // pop item off stack
-                @SP
-                M=M-1       // Decrement stack pointer
-                A=M         // A = Stack pointer
-                D=M         // D = old top of stack
-                // write item to arg0
-                @ARG
-                A=M         // address of first argument
-                M=D         // arg0 = item 1
-
-            // discard stack
-            @ARG
-            D=M           // end of caller's stackframe
+        emit_fmt_hack!{r"
+            // stow previous stack pointer
             @SP
-            M=D             // set stack pointer to just underneath previous function stackframe
+            D=M     // D = stack pointer
+            @R13
+            M=D     // RAM[13] = stack pointer before return
 
-            // stow return address address
+            // mark the stackframe as un-allocated
+            @ARG
+            D=M   // A = pointer to arg[0] on parent stackframe
+            @SP
+           M=D      // set stack pointer to position of arg[0] in stack
+
+            // copy return value from calle's stack to caller's stack
+            @R13
+            A=M-1   // D = address of last item on stack before return
+            D=M     // D = value of last item on stack before return
+            @SP
+            A=M
+            M=D     // write to caller stack
+            @SP
+            M=M+1
+
+
+            // stow LCL from before return
             @LCL
-            A=M
-            A=A-1
-            A=A-1
-            A=A-1
-            A=A-1
-            A=A-1   // D = address of return address
-            D=A     // D = address of return address
-            @R13
-            M=D     // mem[13] = return address address
+            D=M     // D = value of local stack pointer before return
+            @R14
+            M=D     // RAM[14] = value of local stack pointer before return
 
-            // recover caller's segment pointers
-                // load caller's THAT segment THAT = *LCL-1
-                @LCL
-                A=M     // A = address of first local
-                A=A-1   // A = address of caller's THAT
-                D=M     // D = caller's semgnet value
+            // reover caller context
+            @R14
+            D=M     // D = value of local stack pointer before return
+            @R15
+            M=D-1   // RAM[15] = address of caller's THAT on stack
+
+                // that
+                A=M     // A = address of caller's THAT on stack
+                D=M     // D = value of caller's THAT
                 @THAT
-                M=D
+                M=D     // THAT = value of caller's THAT
 
-                // load caller's THIS segment THIS = *LCL-2
-                @LCL
-                A=M     // A = address of first local
-                A=A-1   // A = address of caller's THAT
-                A=A-1   // A = address of caller's THIS
-                D=M     // D = caller's semgnet value
+                // this
+                @R15
+                M=M-1   // RAM[15] = address of caller's THIS on stack
+                A=M     // A = address of caller's THIS on stack
+                D=M     // D = value of caller's THIS on stack
                 @THIS
-                M=D
+                M=D     // THIS = value of caller's THIS
 
-                // load caller's ARG segment ARG = *LCL-3
-                @LCL
-                A=M     // A = address of first local
-                A=A-1   // A = address of caller's THAT
-                A=A-1   // A = address of caller's THIS
-                A=A-1   // A = address of caller's ARG
-                D=M     // D = caller's semgnet value
+                // arg
+                @R15
+                M=M-1   // RAM[15] = address of caller's ARG on stack
+                A=M     // A = address of caller's ARG on stack
+                D=M     // D = value of caller's ARG on stack
                 @ARG
-                M=D
+                M=D     // ARG = value of caller's this
 
-                // load caller's LCL segment
+                // lcl
+                @R15
+                M=M-1   // RAM[15] = address of caller's LCL on stack
+                A=M     // A = address of caller's LCL on stack
+                D=M     // D = value of caller's LCL on stack
                 @LCL
-                A=M     // A = address of first local
-                A=A-1   // A = address of caller's THAT
-                A=A-1   // A = address of caller's THIS
-                A=A-1   // A = address of caller's ARG
-                A=A-1   // A = address of caller's LCL
-                D=M     // D = caller's semgnet value
-                @LCL
-                M=D
+                M=D     // LCL = value of caller's LCL
 
-            // jump to return address
-            @R13
-            A=M
-            A=M         // A = return address
-            0;JMP       // jump to return address
-        "};
+                // return
+                @R15
+                M=M-1   // RAM[15] = address of caller's return address on stack
+                A=M     // A = address of caller's return address on stack
+                A=M     // A = value of caller's return address on stack
+                0;JMP   // jump to return address
+        "}
+
         self.emitln("");
+
+
+        // emit_hack! {r"
+        //     // return
+        //     // insert return value to arg[0] of caller
+        //         // load caller's argument segment ARG= *LCL-3
+        //         @LCL
+        //         A=M     // A = address of first local
+        //         A=A-1
+        //         A=A-1
+        //         A=A-1   // A = address of caller's ARG
+        //         D=M     // A = caller's ARG
+        //         @ARG
+        //         A=M
+        //         M=D     // write segment value
+        //
+        //         // pop item off stack
+        //         @SP
+        //         M=M-1       // Decrement stack pointer
+        //         A=M         // A = Stack pointer
+        //         D=M         // D = old top of stack
+        //         // write item to arg0
+        //         @ARG
+        //         A=M         // address of first argument
+        //         M=D         // arg0 = item 1
+        //
+        //     // discard stack
+        //     @ARG
+        //     D=M           // end of caller's stackframe
+        //     @SP
+        //     M=D             // set stack pointer to just underneath previous function stackframe
+        //
+        //     // stow return address address
+        //     @LCL
+        //     A=M
+        //     A=A-1
+        //     A=A-1
+        //     A=A-1
+        //     A=A-1
+        //     A=A-1   // D = address of return address
+        //     D=A     // D = address of return address
+        //     @R13
+        //     M=D     // mem[13] = return address address
+        //
+        //     // recover caller's segment pointers
+        //         // load caller's THAT segment THAT = *LCL-1
+        //         @LCL
+        //         A=M     // A = address of first local
+        //         A=A-1   // A = address of caller's THAT
+        //         D=M     // D = caller's semgnet value
+        //         @THAT
+        //         M=D
+        //
+        //         // load caller's THIS segment THIS = *LCL-2
+        //         @LCL
+        //         A=M     // A = address of first local
+        //         A=A-1   // A = address of caller's THAT
+        //         A=A-1   // A = address of caller's THIS
+        //         D=M     // D = caller's semgnet value
+        //         @THIS
+        //         M=D
+        //
+        //         // load caller's ARG segment ARG = *LCL-3
+        //         @LCL
+        //         A=M     // A = address of first local
+        //         A=A-1   // A = address of caller's THAT
+        //         A=A-1   // A = address of caller's THIS
+        //         A=A-1   // A = address of caller's ARG
+        //         D=M     // D = caller's semgnet value
+        //         @ARG
+        //         M=D
+        //
+        //         // load caller's LCL segment
+        //         @LCL
+        //         A=M     // A = address of first local
+        //         A=A-1   // A = address of caller's THAT
+        //         A=A-1   // A = address of caller's THIS
+        //         A=A-1   // A = address of caller's ARG
+        //         A=A-1   // A = address of caller's LCL
+        //         D=M     // D = caller's semgnet value
+        //         @LCL
+        //         M=D
+        //
+        //     // jump to return address
+        //     @R13
+        //     A=M
+        //     A=M         // A = return address
+        //     0;JMP       // jump to return address
+        // "};
+        // self.emitln("");
     }
+
+
+
+    fn temp_to_stack(reg: TempRegister) {
+
+
+
+    }
+    fn stack_to_temp(reg: TempRegister) {}
+    fn const_to_stack(value: i16) {}
+    fn const_to_temp(value: i16, reg: TempRegister) {}
+    fn sub_stack() {}
+    fn add_stack() {}
 
     fn segment_pointer_to_stack(&mut self, segment: Segment) {
         // let not_temp_segment;
@@ -961,7 +1035,6 @@ impl SimpleEmitter {
             @ARG
             M=D     // ARG is set to point to first argument on stack
         ");
-
 
         // push return address on stack
         emit_fmt_hack!(r"
@@ -1083,4 +1156,16 @@ impl SimpleEmitter {
         //
         // self.emitln("");
     }
+}
+
+#[repr(usize)]
+enum TempRegister {
+    T0 = 5,
+    T1 = 6,
+    T2 = 7,
+    T3 = 8,
+    T4 = 9,
+    T5 = 10,
+    T6 = 11,
+    T7 = 12
 }
