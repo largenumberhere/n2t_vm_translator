@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::transform::traverse_directories;
+use crate::transform::transform_directory;
 use crate::transformer::writer::WriterContext;
 use crate::transform::transform_file;
 use std::path::{Path, PathBuf};
@@ -27,14 +27,15 @@ fn main() {
         _ => false,
     };
 
+
     let context = WriterContext::default();
     let path = Path::new(&arg1);
     let out_path = assume_output_path(path);
     let out_steam = Arc::new(std::fs::File::create(&out_path).unwrap());
     if path.is_dir() {
-        traverse_directories(path, &mut translate_error, out_steam, inject_init, context);
+        transform_directory(path, &mut translate_error, out_steam, inject_init, context, out_path.clone());
     } else {
-        transform_file(context, path, out_steam, &mut translate_error, inject_init);
+        transform_file(context, path, out_steam, &mut translate_error, inject_init, out_path.clone());
     }
 
     if translate_error {

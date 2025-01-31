@@ -274,7 +274,7 @@ impl SimpleEmitter {
             M=D         // set stack pointer to 256
 
             @Sys.init
-            0;JMP
+            0;JMP       // call Sys.init
         "};
         self.emitln("");
 
@@ -388,88 +388,32 @@ impl SimpleEmitter {
 
     // tested
     pub fn push_const(&mut self, val: i16) {
-        // self.assign_a(val);
-        // emit_hack! {r"
-        //     D=A
-        //     @SP
-        //     M=M+1       // increase stack pointer
-        //     A=M-1       // get stack address to write to
-        //     M=D         // stack top = D
-        // "};
-        // self.emitln("");
-
-        emit_fmt_hack!(r"
-            @{val}
-            D=A
-            @SP
-            A=M
-            M=D
-            @SP
-            M=M+1
-        ");
-        self.emitln("");
+        self.const_to_stack(val);
     }
 
-    // tested
     pub fn add(&mut self) {
-        // D = pop1
-        self.stack_to_d();
+        self.stack_to_temp(TempRegister::T0);
+        self.stack_to_temp(TempRegister::T1);
+        self.add_temp(TempRegister::T0, TempRegister::T0, TempRegister::T1);
+        self.temp_to_stack(TempRegister::T0);
 
-        emit_hack! {r"
-            @SP         // add last item in stack to D
-            M=M-1       // decrement stack pointer
-            A=M         // A = stack pointer
-            A=M         // A = pop2
-            D=D+A       // D = pop1 + pop2
-            A=D         // A = result
-        "};
-        self.a_to_stack();
-        self.emitln("");
     }
 
 
-
-    // seems to check out
     pub fn eq(&mut self) {
-        let is_equal = self.symbol_generator.next_commented("is_eq");
-        let not_equal = self.symbol_generator.next_commented("not_equal");
-        let end = self.symbol_generator.next_commented("end");
-        self.stack_to_d();
-        emit_fmt_hack!{r"
-            // D = value from stack
-            @SP
-            A=M-1       // A = address of top item in stack
-            A=M         // A = top value from stack
-            D=D-A       // D = difference of values from stack
-            @{is_equal}
-            D;JEQ       // if pop1 == pop2, goto is_equal, else goto not_equal
+        self.stack_to_temp(TempRegister::T0);
+        self.stack_to_temp(TempRegister::T1);
+        self.sub_temp(TempRegister::T0, TempRegister::T0, TempRegister::T1);
+        self.not_zero_tmp(TempRegister::T0);
+        self.temp_to_stack(TempRegister::T0);
 
-            ({not_equal})
-                D={LOGIC_FALSE}
-                @{end}      // goto end
-                0;JMP
-            ({is_equal})
-                D={LOGIC_TRUE}
-            ({end})
-            @SP
-            A=M-1       // grab pointer to top item in stack
-            M=D         // write to stack
-        "};
-        self.emitln("");
     }
 
-    // tested!
     pub fn sub(&mut self) {
-        self.stack_to_d();
-        emit_hack! {r"
-            @SP
-            A=M-1       // get pointer to top item in stack
-            A=M         // A = value from stack
-            D=A-D       // D = pop2 - pop1
-            @SP
-            A=M-1
-            M=D         // write result on stack"
-        };
+        self.stack_to_temp(TempRegister::T0);
+        self.stack_to_temp(TempRegister::T1);
+        self.sub_temp(TempRegister::T0, TempRegister::T1, TempRegister::T0);
+        self.temp_to_stack(TempRegister::T0);
 
         self.emitln("");
     }
@@ -750,6 +694,7 @@ impl SimpleEmitter {
     }
 
     const USER_LABEL_PREFIX: &'static str = "user_";
+    // declare the start of a label. mangles the label
     pub fn label(&mut self, symbol: &str) {
         emit_fmt_hack!{r"({}{})", Self::USER_LABEL_PREFIX, symbol};
     }
@@ -800,10 +745,11 @@ impl SimpleEmitter {
         }
     }
 
-
-
     // passes SimpleFunction test
     pub fn _return(&mut self) {
+        //
+
+
         emit_fmt_hack!{r"
             // stow previous stack pointer
             @SP
@@ -815,7 +761,7 @@ impl SimpleEmitter {
             @ARG
             D=M   // A = pointer to arg[0] on parent stackframe
             @SP
-           M=D      // set stack pointer to position of arg[0] in stack
+            M=D      // set stack pointer to position of arg[0] in stack
 
             // copy return value from calle's stack to caller's stack
             @R13
@@ -880,109 +826,11 @@ impl SimpleEmitter {
 
         self.emitln("");
 
-
-        // emit_hack! {r"
-        //     // return
-        //     // insert return value to arg[0] of caller
-        //         // load caller's argument segment ARG= *LCL-3
-        //         @LCL
-        //         A=M     // A = address of first local
-        //         A=A-1
-        //         A=A-1
-        //         A=A-1   // A = address of caller's ARG
-        //         D=M     // A = caller's ARG
-        //         @ARG
-        //         A=M
-        //         M=D     // write segment value
-        //
-        //         // pop item off stack
-        //         @SP
-        //         M=M-1       // Decrement stack pointer
-        //         A=M         // A = Stack pointer
-        //         D=M         // D = old top of stack
-        //         // write item to arg0
-        //         @ARG
-        //         A=M         // address of first argument
-        //         M=D         // arg0 = item 1
-        //
-        //     // discard stack
-        //     @ARG
-        //     D=M           // end of caller's stackframe
-        //     @SP
-        //     M=D             // set stack pointer to just underneath previous function stackframe
-        //
-        //     // stow return address address
-        //     @LCL
-        //     A=M
-        //     A=A-1
-        //     A=A-1
-        //     A=A-1
-        //     A=A-1
-        //     A=A-1   // D = address of return address
-        //     D=A     // D = address of return address
-        //     @R13
-        //     M=D     // mem[13] = return address address
-        //
-        //     // recover caller's segment pointers
-        //         // load caller's THAT segment THAT = *LCL-1
-        //         @LCL
-        //         A=M     // A = address of first local
-        //         A=A-1   // A = address of caller's THAT
-        //         D=M     // D = caller's semgnet value
-        //         @THAT
-        //         M=D
-        //
-        //         // load caller's THIS segment THIS = *LCL-2
-        //         @LCL
-        //         A=M     // A = address of first local
-        //         A=A-1   // A = address of caller's THAT
-        //         A=A-1   // A = address of caller's THIS
-        //         D=M     // D = caller's semgnet value
-        //         @THIS
-        //         M=D
-        //
-        //         // load caller's ARG segment ARG = *LCL-3
-        //         @LCL
-        //         A=M     // A = address of first local
-        //         A=A-1   // A = address of caller's THAT
-        //         A=A-1   // A = address of caller's THIS
-        //         A=A-1   // A = address of caller's ARG
-        //         D=M     // D = caller's semgnet value
-        //         @ARG
-        //         M=D
-        //
-        //         // load caller's LCL segment
-        //         @LCL
-        //         A=M     // A = address of first local
-        //         A=A-1   // A = address of caller's THAT
-        //         A=A-1   // A = address of caller's THIS
-        //         A=A-1   // A = address of caller's ARG
-        //         A=A-1   // A = address of caller's LCL
-        //         D=M     // D = caller's semgnet value
-        //         @LCL
-        //         M=D
-        //
-        //     // jump to return address
-        //     @R13
-        //     A=M
-        //     A=M         // A = return address
-        //     0;JMP       // jump to return address
-        // "};
-        // self.emitln("");
     }
 
 
 
-    fn temp_to_stack(reg: TempRegister) {
 
-
-
-    }
-    fn stack_to_temp(reg: TempRegister) {}
-    fn const_to_stack(value: i16) {}
-    fn const_to_temp(value: i16, reg: TempRegister) {}
-    fn sub_stack() {}
-    fn add_stack() {}
 
     fn segment_pointer_to_stack(&mut self, segment: Segment) {
         // let not_temp_segment;
@@ -1094,78 +942,122 @@ impl SimpleEmitter {
         ");
 
 
-        // let caller_return = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
-        //
-        // // set Ram[13] to address of first argument
-        // emit_hack! {r"
-        //     // save stack address of first argument
-        //     @SP
-        //     D=M
-        // "};
-        // self.assign_a(n_args);
-        // emit_hack! {r"
-        //     D=D-A
-        //     @R13
-        //     M=D
-        // "};
-        //
-        // emit_hack! {r"// save a return address"};
-        // emit_fmt_hack!("@{}", caller_return.as_str());
-        // emit_hack! {r"
-        //     D=A
-        //     @SP
-        //     A=M
-        //     M=D
-        //     @SP
-        //     M=M+1
-        // "};
-        //
-        // // save caller stackframe
-        // self.segment_pointer_to_stack(Segment::Local);
-        // self.segment_pointer_to_stack(Segment::Argument);
-        // self.segment_pointer_to_stack(Segment::This);
-        // self.segment_pointer_to_stack(Segment::That);
-        //
-        //
-        // emit_hack!{r"
-        //     // setup segment pointers for callee
-        //         // ARG = address of first argument passed
-        //         @R13
-        //         D=M
-        //         @ARG
-        //         M=D
-        //
-        //         // LCL = start of caller's stackframe
-        //         @SP
-        //         D=M
-        //         @LCL
-        //         A=M
-        //         M=D
-        //     // jump
-        //
-        // "};
-        //
-        // // jump
-        // emit_fmt_hack!("@{}", callee_symbol);
-        // emit_hack! {r"
-        //     0;JMP
-        // "};
-        //
-        // // declare callee return address
-        // self.emit_label_start(caller_return.as_str());
-        //
-        // self.emitln("");
     }
+
+    fn temp_to_stack(&mut self ,reg: TempRegister) {
+        let register_offset = reg as usize;
+        emit_fmt_hack!(r"
+            @{0}
+            D=M     // D = value of tmp register
+        ", register_offset);
+
+        self.d_to_stack();
+
+    }
+    fn stack_to_temp(&mut self, reg: TempRegister) {
+        let register_offset = reg as usize;
+
+        self.stack_to_d();  // A = pop stack
+
+        emit_fmt_hack!{r"
+            @{}
+            M=D
+        ", register_offset};
+    }
+    fn const_to_stack(&mut self, value: i16) {
+        self.assign_a(value);   // A = value
+
+        emit_fmt_hack!(r"
+            D=A
+        ");
+
+        self.d_to_stack();
+    }
+
+    fn const_to_temp(&mut self, value: i16, reg: TempRegister) {
+        let register_offset = reg as usize;
+        self.assign_a(value);
+        emit_fmt_hack!(r"
+            D=A
+            @{0}
+            M=D
+        ", register_offset);
+
+    }
+
+
+    // if the tmp register is zero, set it to LOGIC_TRUE, else set it to LOGIC_FALSE
+    fn not_zero_tmp(&mut self, tmp: TempRegister) {
+        let is_zero = self.symbol_generator.next_commented("is_eq");
+        let not_zero = self.symbol_generator.next_commented("not_equal");
+        let end = self.symbol_generator.next_commented("end");
+
+        emit_fmt_hack!(r"
+            @{0}
+            D=M
+
+            @{is_zero}
+            D;JEQ       // if 0, goto is_equal, else goto not_equal
+
+            ({not_zero})
+                D={LOGIC_FALSE}
+                @{end}      // goto end
+                0;JMP
+            ({is_zero})
+                D={LOGIC_TRUE}
+            ({end})
+
+            // Temp = result
+            @{0}
+            M=D
+        ", tmp as usize);
+    }
+
+    // tmp_out = tmp1 + tmp2
+    fn add_temp(&mut self ,tmp_out: TempRegister, tmp1: TempRegister, tmp2: TempRegister) {
+        let register1_offset = tmp1 as usize;
+        let register2_offset = tmp2 as usize;
+        let registerout_offset = tmp_out as usize;
+
+        emit_fmt_hack!(r"
+            @{0}
+            D=M     // D = value of tmp1
+
+
+            @{1}
+            D=D+M   // D = value of value of tmp1 + value of tmp2
+
+            @{2}
+            M=D     // value of tmp_out = value of tmp1 + value of tmp2
+
+        ",register1_offset, register2_offset, registerout_offset );
+    }
+
+    // tmp_out = tmp1 - tmp2
+    fn sub_temp(&mut self, tmp_out: TempRegister, tmp1: TempRegister, tmp2: TempRegister) {
+        let register1_offset = tmp1 as usize;
+        let register2_offset = tmp2 as usize;
+        let registerout_offset = tmp_out as usize;
+
+        emit_fmt_hack!(r"
+            @{0}
+            D=M     // D = value of tmp1
+
+
+            @{1}
+            D=D-M   // D = value of value of tmp1 - value of tmp2
+
+            @{2}
+            M=D     // value of tmp_out = value of tmp1 - value of tmp2
+
+        ",register1_offset, register2_offset, registerout_offset );
+    }
+
 }
 
 #[repr(usize)]
 enum TempRegister {
-    T0 = 5,
-    T1 = 6,
-    T2 = 7,
-    T3 = 8,
-    T4 = 9,
-    T5 = 10,
-    T6 = 11,
-    T7 = 12
+    T0 = 13,
+    T1 = 14,
+    T2 = 15,
 }

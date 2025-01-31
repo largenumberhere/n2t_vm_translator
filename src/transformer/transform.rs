@@ -1,7 +1,7 @@
 use std::fs::{DirEntry, File};
-use std::io::Read;
+use std::io::{Read, Write};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::parser::Parser;
 use super::writer::{CodeWriter, WriterContext};
@@ -42,9 +42,12 @@ pub fn transform_file(
     out_steam: Arc<File>,
     errored: &mut bool,
     emit_init: bool,
+    out_path: PathBuf
 ) -> WriterContext<EmitterContext>
 {
-    let out_path = crate::assume_output_path(&in_file_path);
+
+    // todo: not correct for files in a folder
+    // let out_path = crate::assume_output_path(&in_file_path);
 
     let file_in = std::fs::File::open(&in_file_path).expect("Failed to open input file");
 
@@ -60,6 +63,7 @@ pub fn transform_file(
         out_steam.clone(),
         emit_init,
     );
+
     let new_state = match result {
         Ok(s) => s,
         Err(error) => {
@@ -79,6 +83,7 @@ pub fn visit_dir_entry(
     writer_context: WriterContext<EmitterContext>,
     translate_error: &mut bool,
     inject_init: bool,
+    out_path: PathBuf
 ) -> WriterContext<EmitterContext>
 {
     let mut context = writer_context;
@@ -93,6 +98,7 @@ pub fn visit_dir_entry(
                 context,
                 translate_error,
                 inject_init,
+                out_path.clone()
             );
         }
     } else {
@@ -104,6 +110,7 @@ pub fn visit_dir_entry(
                 out_stream,
                 translate_error,
                 inject_init,
+                out_path
             );
         }
     }
@@ -111,23 +118,29 @@ pub fn visit_dir_entry(
     context
 }
 
-pub fn traverse_directories(
+pub fn transform_directory(
     path: &Path,
     translate_error: &mut bool,
     out_stream: Arc<File>,
     emit_init: bool,
     writer_context: WriterContext<EmitterContext>,
+    out_path: PathBuf
 )
 {
     let mut context = writer_context;
-    // let out_path = assume_output_path(path);
     for entry in std::fs::read_dir(path).unwrap() {
+        let entry = entry.unwrap();
+
+        let mut out_stream = out_stream.clone();
+        out_stream.flush();
+
         context = visit_dir_entry(
-            entry.unwrap(),
-            out_stream.clone(),
+            entry,
+            out_stream,
             context,
             translate_error,
             emit_init,
+            out_path.clone()
         );
     }
 }
