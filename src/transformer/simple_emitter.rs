@@ -267,35 +267,36 @@ impl SimpleEmitter {
     }
 
     pub fn emit_init(&mut self) {
-        // self.call(0, "Sys.init");
         emit_hack! {r"
             @256
             D=A
             @SP
             M=D         // initialise stack pointer
+
+            @1
+            D=-A
+            @LCL
+            M=D
+
+            @2
+            D=-A
+            @ARG
+            M=D
+
+            @3
+            D=-A
+            @THIS
+            M=D
+
+            @4
+            D=-A
+            @THAT
+            M=D        // initialize segment pointers to a known value
         "};
 
         self.call(0,"Sys.init", true);
-
         self.emitln("");
 
-        // // initalize segments
-        // // 1. clear the memory if needed
-        //
-        // let asm: &str= hack_str!{r"
-        //     // // emit_init: write 256 to stack pointer
-        //     // @256
-        //     // D=A
-        //     // @0
-        //     // M=D // todo: LCL, ARG, THIS, THAT"};
-        //
-        // // 2. setup segment pointers
-        // self.emitln(asm);
-        // self.emitln("");
-        // self.writer.write_fmt(format_args!("{}\n\n", asm))
-        //     .unwrap();
-
-        // panic!("{}", a);
     }
 
     fn emitln(&mut self, str: &str) {
@@ -890,7 +891,7 @@ impl SimpleEmitter {
     }
 
     // clobbers A
-    fn sp_at_offset(&mut self, offset: i16) {
+    fn sp_at_offset(&mut self, mut offset: i16) {
         if offset > 0 {
             panic!("negative offset expected");
         }
@@ -898,14 +899,15 @@ impl SimpleEmitter {
         emit_fmt_hack!(r"
             @SP
             A=M
-
         ");
 
-        for i in offset..0 {
-            emit_hack!(r"
-                A=A-1
-            ");
+        // println!("offset {}", offset);
+        while offset < 0 {
+            // println!("A=A-1");
+            emit_hack!("A=A-1");
+            offset +=1;
         }
+
     }
 
     pub fn call(&mut self, mut n_args: i16, callee_symbol: &str, first_call: bool) {
@@ -913,140 +915,127 @@ impl SimpleEmitter {
 
         let ret_label = fmt_hack!("{}$ret.{}", callee_symbol, self.func_emitter.call());
 
+        // save stackframe
+            // make room for values
+            /*
+                | Offset |  Usage                   |
+                |--------|--------------------------|
+                | *SP -6 |  caller's last argument (if any)  |
+                | *SP -5 |  return address          |
+                | *SP -4 |  caller's LCL            |
+                | *SP -3 |  caller's ARG            |
+                | *SP -2 |  caller's THIS           |
+                | *SP -1 |  caller's THAT           |
+                | *SP -0 |  end of stack            |
 
-            // set up a room for a dummy return value
-        if (n_args == 0) {
-                // make room for a dummy return value
+                - save caller's segment pointers
+                - insert return label
+                - update ARG, LCL, and SP
+                - jump to function prologue
+            */
+
+            // Increase stack pointer by 5 to reserve room for stackframe
+            emit_fmt_hack!(r"
+                @5
+                D=A
+                @SP
+                M=M+D
+            ");
+
+            // offset in stack to write the values
+            let caller_return_address = -5;
+            let caller_lcl_offset = -4;
+            let caller_arg_offset = -3;
+            let caller_this_offset = -2;
+            let caller_that_offset = -1;
+
+
+            // write return address to stack
+            emit_fmt_hack!(r"
+                @{ret_label}
+                D=A
+            ");
+            self.sp_at_offset(caller_return_address);
+            emit_fmt_hack!(r"
+                M=D
+            ");
+
+            // write LCL to stack
+            emit_fmt_hack!(r"
+                @LCL
+                D=M
+            ");
+            self.sp_at_offset(caller_lcl_offset);
+            emit_fmt_hack!(r"
+                M=D
+            ");
+
+            // write ARG to stack
+            emit_fmt_hack!(r"
+                @ARG
+                D=M
+            ");
+            self.sp_at_offset(caller_arg_offset);
+            emit_fmt_hack!(r"
+                M=D
+            ");
+
+            // write THIS to stack
+            emit_fmt_hack!(r"
+                @THIS
+                D=M
+            ");
+            self.sp_at_offset(caller_this_offset);
+            emit_fmt_hack!(r"
+                M=D
+            ");
+
+            // write THAT to stack
+            emit_fmt_hack!(r"
+                @THAT
+                D=M
+            ");
+            self.sp_at_offset(caller_that_offset);
+            emit_fmt_hack!(r"
+                M=D
+            ");
+
+            // set LCL to same as SP
             emit_fmt_hack!(r"
                 @SP
-                M=M+1
+                D=M
+                @LCL
+                M=D
             ");
 
-            // if (!first_call) {
-                n_args += 1;
-            // }
-        }
 
-        // make room for values
-        /*
-            | Offset |  Usage                   |
-            |--------|--------------------------|
-            | *SP -6 |  caller's last argument  |
-            | *SP -5 |  return address          |
-            | *SP -4 |  caller's LCL            |
-            | *SP -3 |  caller's ARG            |
-            | *SP -2 |  caller's THIS           |
-            | *SP -1 |  caller's THAT           |
-            | *SP -0 |  end of stack            |
-
-            - save caller's segment pointers
-            - insert return label
-            - update ARG, LCL, and SP
-            - jump to function prologue
-        */
-
-        // Increase stack pointer by 5 to reserve room for stackframe
-        emit_fmt_hack!(r"
-            @5
-            D=A
-            @SP
-            M=M+D
-        ");
-
-        // offset in stack to write the values
-        let caller_last_arg_address = -6;
-        let caller_return_address = -5;
-        let caller_lcl_offset = -4;
-        let caller_arg_offset = -3;
-        let caller_this_offset = -2;
-        let caller_that_offset = -1;
-
-        // write return address
-        emit_fmt_hack!(r"
-            @{ret_label}
-            D=A
-        ");
-
-        self.sp_at_offset(caller_return_address);
-        emit_fmt_hack!(r"
-            M=D
-        ");
-
-        // write LCL
-        emit_fmt_hack!(r"
-            @LCL
-            D=M
-        ");
-        self.sp_at_offset(caller_lcl_offset);
-        emit_fmt_hack!(r"
-            M=D
-        ");
-
-        // write ARG
-        emit_fmt_hack!(r"
-            @ARG
-            D=M
-        ");
-        self.sp_at_offset(caller_arg_offset);
-        emit_fmt_hack!(r"
-            M=D
-        ");
-
-        // write THIS
-        emit_fmt_hack!(r"
-            @THIS
-            D=M
-        ");
-        self.sp_at_offset(caller_this_offset);
-        emit_fmt_hack!(r"
-            M=D
-        ");
-
-        // write THAT
-        emit_fmt_hack!(r"
-            @THAT
-            D=M
-        ");
-        self.sp_at_offset(caller_that_offset);
-        emit_fmt_hack!(r"
-            M=D
-        ");
-
-        // set LCL to same as SP
-        emit_fmt_hack!(r"
-            @SP
-            D=M
-            @LCL
-            M=D
-        ");
-
-
-
-        // set arg to address of first argument
-        self.sp_at_offset(caller_last_arg_address);
-        if (n_args > 0) {
-            for i in 0..n_args - 1 {
-                emit_fmt_hack!(r"
-                A=A-1
-            ");
+        // update segment registers
+            // set arg pointer to first argument
+            // it must point to the first argument, or caller_return_address if none
+            self.sp_at_offset(caller_return_address);
+            if (n_args > 0) {
+                for i in 0..n_args {
+                    emit_fmt_hack!(r"
+                    A=A-1
+                ");
+                }
             }
-        }
-        emit_fmt_hack!(r"
-            D=A
-            @ARG
-            M=D
-        ");
+            emit_fmt_hack!(r"
+                D=A
+                @ARG
+                M=D
+            ");
 
-        // jump to the function
-        emit_fmt_hack!(r"
-            @{callee_symbol}
-            0;JMP
-        ");
+            // jump to the function
+            emit_fmt_hack!(r"
+                @{callee_symbol}
+                0;JMP   // complete the function call
+            ");
 
-        // declare return label
-        emit_fmt_hack!(r"
-            ({ret_label})
-        ");
+            // declare return label
+            emit_fmt_hack!(r"
+                ({ret_label})
+            ");
 
     }
 
